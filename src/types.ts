@@ -1,4 +1,4 @@
-export type OrderPlatform = 'ifood' | 'anotai' | 'deliverymuch';
+export type OrderPlatform = 'ifood' | 'anotai' | 'deliverymuch' | 'local';
 
 export interface NormalizedOrderItemAdditional {
   name: string;
@@ -31,7 +31,7 @@ export interface NormalizedOrder {
   platform: OrderPlatform;
   createdAt: string; // ISO String
   orderTime: string; // HH:MM
-  deliveryType: 'delivery' | 'retirada';
+  deliveryType: 'delivery' | 'retirada' | 'local';
   customerName: string;
   customerPhone?: string;
   customerAddress?: AddressInfo;

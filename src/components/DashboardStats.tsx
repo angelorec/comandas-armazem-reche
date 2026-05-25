@@ -20,14 +20,16 @@ export default function DashboardStats({ orders, onRefresh, isRefreshing }: Stat
   const ifoodCount = orders.filter(o => o.platform === 'ifood').length;
   const anotaiCount = orders.filter(o => o.platform === 'anotai').length;
   const dmCount = orders.filter(o => o.platform === 'deliverymuch').length;
+  const localCount = orders.filter(o => o.platform === 'local').length;
 
   const totalCount = orders.length || 1;
   const ifoodPct = Math.round((ifoodCount / totalCount) * 100);
   const anotaiPct = Math.round((anotaiCount / totalCount) * 100);
   const dmPct = Math.round((dmCount / totalCount) * 100);
+  const localPct = Math.round((localCount / totalCount) * 100);
 
   return (
-    <div id="stats-dashboard-grid" className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <div id="stats-dashboard-grid" className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
       {/* Revenue Card */}
       <div id="stat-card-revenue" className="bg-neutral-900/60 border border-neutral-800/80 rounded-2xl p-5 flex flex-col justify-between shadow-lg shadow-neutral-950/25 relative overflow-hidden transition-all duration-300 hover:border-neutral-700/60 group">
         <div className="absolute top-0 right-0 w-24 h-24 bg-yellow-450/5 rounded-full blur-2xl group-hover:bg-yellow-450/10 transition-colors duration-500"></div>
@@ -137,6 +139,20 @@ export default function DashboardStats({ orders, onRefresh, isRefreshing }: Stat
             </div>
             <div className="w-full bg-neutral-950/60 h-1.5 rounded-full overflow-hidden border border-neutral-850/60">
               <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${orders.length ? dmPct : 0}%` }}></div>
+            </div>
+          </div>
+
+          {/* Pedido Em Loco */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="flex items-center gap-1.5 text-neutral-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shadow-sm shadow-yellow-400/50"></span>
+                Pedido Em Loco
+              </span>
+              <span className="font-mono text-neutral-400 font-medium">{localCount} ({localPct}%)</span>
+            </div>
+            <div className="w-full bg-neutral-950/60 h-1.5 rounded-full overflow-hidden border border-neutral-850/60">
+              <div className="bg-yellow-400 h-full rounded-full transition-all duration-500" style={{ width: `${orders.length ? localPct : 0}%` }}></div>
             </div>
           </div>
         </div>

@@ -4,12 +4,13 @@ import {
   Sparkles, CheckCircle2, XCircle, PlusCircle, RotateCcw, FileJson, 
   Calendar, MapPin, Phone, CreditCard, AlertCircle, Filter, 
   Volume2, VolumeX, ChevronDown, ChevronUp, SlidersHorizontal, Trash2, 
-  ExternalLink, Layers, RefreshCw
+  ExternalLink, Layers, RefreshCw, Edit
 } from 'lucide-react';
 import { NormalizedOrder, OrderPlatform } from './types';
 import DashboardStats from './components/DashboardStats';
 import OrderSimulator from './components/OrderSimulator';
 import CommandLogo from './components/CommandLogo';
+import LocalOrderModal from './components/LocalOrderModal';
 
 export default function App() {
   const [orders, setOrders] = useState<NormalizedOrder[]>([]);
@@ -20,6 +21,10 @@ export default function App() {
   const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'older'>('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
+
+  // Local/Manual order creation & editing state
+  const [isLocalModalOpen, setIsLocalModalOpen] = useState(false);
+  const [orderToEdit, setOrderToEdit] = useState<NormalizedOrder | null>(null);
   
   // Custom Print stimulation states
   const [printSimulationRunning, setPrintSimulationRunning] = useState(false);
@@ -71,6 +76,16 @@ export default function App() {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
+
+  // Smooth scroll to preview panel on mobile when an order is selected
+  useEffect(() => {
+    if (selectedOrderId && window.innerWidth < 1024) {
+      const element = document.getElementById('print-visualization-column');
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  }, [selectedOrderId]);
 
   // Web Audio simulated mechanical thermal printer hum
   const playPrinterSound = () => {
@@ -200,6 +215,42 @@ export default function App() {
     }
   };
 
+  const handleOpenCreateLocalOrderModal = () => {
+    setOrderToEdit(null);
+    setIsLocalModalOpen(true);
+  };
+
+  const handleOpenEditLocalOrderModal = (order: NormalizedOrder) => {
+    setOrderToEdit(order);
+    setIsLocalModalOpen(true);
+  };
+
+  const handleSaveLocalOrder = async (orderData: Partial<NormalizedOrder>) => {
+    try {
+      if (orderToEdit) {
+        const res = await fetch(`/api/orders/${orderToEdit.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderData)
+        });
+        if (res.ok) {
+          fetchOrders(true);
+        }
+      } else {
+        const res = await fetch('/api/orders/local', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderData)
+        });
+        if (res.ok) {
+          fetchOrders(true);
+        }
+      }
+    } catch (e) {
+      console.error('Error saving local order:', e);
+    }
+  };
+
   // Setup sample mock data helper
   const handleSetupMocks = async () => {
     try {
@@ -280,71 +331,78 @@ export default function App() {
         <div className="hidden print:block printable-section">
           {/* Output depends on what layout wants or we present both side-by-side inside thermal paper wrap */}
           <div className="flex flex-col gap-6 p-4">
-            {/* Standard Complete Receipt */}
-            <div className="bg-white text-neutral-900 p-4 font-mono text-xs w-[80mm] border border-neutral-300 leading-tight">
-              <div className="text-center border-b border-dashed border-neutral-400 pb-3 mb-3">
-                <p className="font-bold text-base">ARMAZÉM RECHE</p>
-                <p className="text-xs uppercase font-black">{selectedOrder.platform} {selectedOrder.displayId}</p>
-                <p className="text-[10px] mt-0.5">{new Date(selectedOrder.createdAt).toLocaleString('pt-BR')}</p>
-              </div>
-              <div className="mb-3 space-y-0.5 text-[11px]">
-                <p><strong>MÉTODO:</strong> {selectedOrder.deliveryType === 'retirada' ? 'RETIRADA EM LOCAL' : 'RECEPÇÃO DELIVERY'}</p>
-                <p><strong>CLIENTE:</strong> {selectedOrder.customerName}</p>
-                {selectedOrder.customerPhone && <p><strong>FONE:</strong> {selectedOrder.customerPhone}</p>}
-                {selectedOrder.customerAddress && (
-                  <p><strong>ENDEREÇO:</strong> {selectedOrder.customerAddress.formatted}</p>
-                )}
-              </div>
-              
-              <div className="border-b border-dashed border-neutral-400 pb-2 mb-2 space-y-1">
-                <p className="font-bold text-[10px] uppercase text-neutral-500">PRODUTOS</p>
-                {selectedOrder.items.map((item, idx) => (
-                  <div key={idx} className="text-[11px]">
-                    <div className="flex justify-between font-bold">
-                      <span>{item.quantity.toString().padStart(2, '0')}x {item.name}</span>
-                      <span>R$ {(item.price * item.quantity).toFixed(2)}</span>
-                    </div>
-                    {item.observations && (
-                      <p className="text-[10px] italic text-neutral-700 pl-3">Obs: {item.observations}</p>
+            {/* Standard Complete Receipt - Hidden for local tabletop orders */}
+            {selectedOrder.deliveryType !== 'local' && (
+              <>
+                <div className="bg-white text-neutral-900 p-3 font-mono text-xs clean-print-paper leading-tight">
+                  <div className="text-center border-b border-dashed border-neutral-400 pb-3 mb-3">
+                    <p className="font-bold text-sm">ARMAZÉM RECHE</p>
+                    <p className="text-xs uppercase font-black">{selectedOrder.platform} {selectedOrder.displayId}</p>
+                    <p className="text-[10px] mt-0.5">{new Date(selectedOrder.createdAt).toLocaleString('pt-BR')}</p>
+                  </div>
+                  <div className="mb-3 space-y-0.5 text-[11px]">
+                    <p><strong>MÉTODO:</strong> {selectedOrder.deliveryType === 'retirada' ? 'RETIRADA EM LOCAL' : 'RECEPÇÃO DELIVERY'}</p>
+                    <p><strong>CLIENTE:</strong> {selectedOrder.customerName}</p>
+                    {selectedOrder.customerPhone && <p><strong>FONE:</strong> {selectedOrder.customerPhone}</p>}
+                    {selectedOrder.customerAddress && (
+                      <p><strong>ENDEREÇO:</strong> {selectedOrder.customerAddress.formatted}</p>
                     )}
-                    {item.additionals && item.additionals.length > 0 && item.additionals.map((add, addIdx) => (
-                      <p key={addIdx} className="text-[10px] text-neutral-600 pl-3">
-                        + {add.quantity}x {add.name} (R$ {((add.price || 0) * add.quantity).toFixed(2)})
-                      </p>
+                  </div>
+                  
+                  <div className="border-b border-dashed border-neutral-400 pb-2 mb-2 space-y-1">
+                    <p className="font-bold text-[10px] uppercase text-neutral-500">PRODUTOS</p>
+                    {selectedOrder.items.map((item, idx) => (
+                      <div key={idx} className="text-[11px]">
+                        <div className="flex justify-between font-bold">
+                          <span>{item.quantity.toString().padStart(2, '0')}x {item.name}</span>
+                          <span>R$ {(item.price * item.quantity).toFixed(2)}</span>
+                        </div>
+                        {item.observations && (
+                          <p className="text-[10px] italic text-neutral-700 pl-3">Obs: {item.observations}</p>
+                        )}
+                        {item.additionals && item.additionals.length > 0 && item.additionals.map((add, addIdx) => (
+                          <p key={addIdx} className="text-[10px] text-neutral-600 pl-3">
+                            + {add.quantity}x {add.name} (R$ {((add.price || 0) * add.quantity).toFixed(2)})
+                          </p>
+                        ))}
+                      </div>
                     ))}
                   </div>
-                ))}
-              </div>
 
-              <div className="space-y-0.5 text-right font-mono text-[11px]">
-                <p>SUBTOTAL: R$ {selectedOrder.subtotal.toFixed(2)}</p>
-                <p>TAXA: R$ {selectedOrder.deliveryFee.toFixed(2)}</p>
-                {selectedOrder.discount && selectedOrder.discount > 0 ? (
-                  <p>DESCONTOS: -R$ {selectedOrder.discount.toFixed(2)}</p>
-                ) : null}
-                <p className="font-bold text-sm border-t border-dashed border-neutral-400 pt-1 mt-1">
-                  TOTAL CLIENTE: R$ {selectedOrder.total.toFixed(2)}
-                </p>
-              </div>
-              <div className="mt-2 text-center text-[10px] border-t border-neutral-300 pt-2 text-neutral-600">
-                <p>Plataforma {selectedOrder.platform} • Simulado por Armazém Reche</p>
-              </div>
-            </div>
+                  <div className="space-y-0.5 text-right font-mono text-[11px]">
+                    <p>SUBTOTAL: R$ {selectedOrder.subtotal.toFixed(2)}</p>
+                    <p>TAXA: R$ {selectedOrder.deliveryFee.toFixed(2)}</p>
+                    {selectedOrder.discount && selectedOrder.discount > 0 ? (
+                      <p>DESCONTOS: -R$ {selectedOrder.discount.toFixed(2)}</p>
+                    ) : null}
+                    <p className="font-bold text-sm border-t border-dashed border-neutral-400 pt-1 mt-1">
+                      TOTAL CLIENTE: R$ {selectedOrder.total.toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="mt-2 text-center text-[10px] border-t border-neutral-300 pt-2 text-neutral-600">
+                    <p>Plataforma {selectedOrder.platform} • Simulado por Armazém Reche</p>
+                  </div>
+                </div>
 
-            <div className="h-5 border-b border-dashed border-zinc-400"></div>
+                <div className="h-5 border-b border-dashed border-zinc-450"></div>
+              </>
+            )}
 
             {/* Standard Standardized kitchen Receipt (Only specific fields required!) */}
-            <div className="bg-white text-neutral-900 p-4 font-mono text-xs w-[80mm] border-2 border-neutral-900 leading-tight">
-              <div className="flex justify-between items-center border-b border-neutral-800 pb-2 mb-3">
-                <span className="bg-neutral-950 text-white font-black px-2.5 py-1 text-lg">COD: {selectedOrder.displayId}</span>
-                <div className="text-right">
-                  <p className="text-[9px] font-bold text-neutral-500 uppercase">HORA EMISSÃO</p>
-                  <p className="font-bold text-sm">{selectedOrder.orderTime}</p>
+            <div className="bg-white text-neutral-900 p-3 font-mono text-xs clean-print-paper border-2 border-neutral-900 leading-tight">
+              <div className="border-b border-neutral-800 pb-2 mb-3">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="bg-neutral-950 text-white font-black px-2.5 py-1 text-lg">COD: {selectedOrder.displayId}</span>
+                  <div className="text-right">
+                    <p className="text-[9px] font-bold text-neutral-500 uppercase">HORA EMISSÃO</p>
+                    <p className="font-bold text-sm">{selectedOrder.orderTime}</p>
+                  </div>
                 </div>
+                <p className="text-[11px] font-black uppercase mt-2">CLIENTE: {selectedOrder.customerName}</p>
               </div>
 
               <div className="bg-neutral-150 py-1 text-center font-extrabold uppercase text-xs tracking-wider mb-3 bg-neutral-200">
-                {selectedOrder.deliveryType === 'retirada' ? 'RETIRADA NO LOCAL' : 'DELIVERY (ENTREGA)'}
+                {selectedOrder.deliveryType === 'local' ? 'PEDIDO EM LOCO' : selectedOrder.deliveryType === 'retirada' ? 'RETIRADA NO BALCÃO' : 'ENTREGA (DELIVERY)'}
               </div>
 
               <div className="space-y-3">
@@ -425,6 +483,19 @@ export default function App() {
         </div>
       </header>
 
+      {/* Prominent High-Visibility Quick-Launcher for Waiters (Mobile only) */}
+      <div className="block lg:hidden p-3.5 bg-neutral-950/80 border-b border-neutral-850/70 backdrop-blur sticky top-[68px] z-40">
+        <button
+          id="btn-create-local-order-mobile"
+          type="button"
+          onClick={handleOpenCreateLocalOrderModal}
+          className="w-full bg-yellow-400 active:bg-yellow-500 text-neutral-950 font-black py-4 px-4 rounded-xl text-xs sm:text-sm tracking-wide flex items-center justify-center gap-2 cursor-pointer transition shadow-lg shadow-yellow-400/10 hover:shadow-yellow-400/25 active:scale-[0.98]"
+        >
+          <PlusCircle className="w-5 h-5 text-neutral-950 stroke-[2.5]" />
+          LANÇAR NOVO PEDIDO EM LOCO
+        </button>
+      </div>
+
       {/* Main Grid Viewport */}
       <main className="flex-1 p-4 md:p-6 max-w-[1720px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-5 overflow-hidden">
         
@@ -476,7 +547,20 @@ export default function App() {
           
           {/* Header Controls for Queue search & filters */}
           <div className="p-3 border-b border-neutral-800 bg-neutral-900/50 space-y-2.5">
-            <div className="flex items-center justify-between">
+            {/* Highly clickable and visible local order wizard launch button */}
+            <div className="pt-1">
+              <button
+                id="btn-create-local-order"
+                type="button"
+                onClick={handleOpenCreateLocalOrderModal}
+                className="w-full bg-yellow-400 hover:bg-yellow-500 text-neutral-950 font-black py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer transition shadow-md shadow-yellow-450/10 hover:shadow-yellow-400/20 active:scale-[0.98]"
+              >
+                <PlusCircle className="w-4 h-4 text-neutral-950 stroke-[2.5]" />
+                LANÇAR NOVO PEDIDO EM LOCO
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-neutral-850 pt-2.5">
               <h2 className="text-sm font-bold uppercase tracking-widest text-yellow-400 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
                 Pedidos Ativos ({filteredActiveOrders.filter(o => o.status === 'pending').length})
@@ -504,7 +588,7 @@ export default function App() {
               <div className="flex items-center gap-1">
                 <span className="text-[9px] uppercase text-neutral-400 font-bold tracking-wider">Canais:</span>
                 <div className="flex flex-wrap gap-1">
-                  {(['all', 'ifood', 'anotai', 'deliverymuch'] as const).map((ch) => (
+                  {(['all', 'ifood', 'anotai', 'deliverymuch', 'local'] as const).map((ch) => (
                     <button
                       key={ch}
                       onClick={() => setPlatformFilter(ch)}
@@ -514,7 +598,7 @@ export default function App() {
                           : 'bg-neutral-800 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-750'
                       }`}
                     >
-                      {ch === 'all' ? 'Ver Todos' : ch.toUpperCase()}
+                      {ch === 'all' ? 'Ver Todos' : ch === 'local' ? 'Em Loco' : ch.toUpperCase()}
                     </button>
                   ))}
                 </div>
@@ -576,7 +660,8 @@ export default function App() {
                 const channelStyles: Record<OrderPlatform, { bg: string, text: string }> = {
                   ifood: { bg: 'bg-red-500', text: 'text-white' },
                   anotai: { bg: 'bg-violet-600', text: 'text-white' },
-                  deliverymuch: { bg: 'bg-emerald-600', text: 'text-white' }
+                  deliverymuch: { bg: 'bg-emerald-600', text: 'text-white' },
+                  local: { bg: 'bg-yellow-400 text-neutral-950 font-black', text: 'text-neutral-950' }
                 };
 
                 return (
@@ -607,12 +692,14 @@ export default function App() {
                       <p className="font-bold text-xs text-neutral-100 truncate">{order.customerName}</p>
                       
                       {/* Delivery badge indicator */}
-                      <span className={`inline-block text-[9px] px-1 py-0.2 rounded font-bold ${
-                        order.deliveryType === 'retirada' 
+                      <span className={`inline-block text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                        order.deliveryType === 'local'
+                          ? 'bg-yellow-400/20 text-yellow-400 border border-yellow-400/30'
+                          : order.deliveryType === 'retirada' 
                           ? 'bg-orange-950/50 text-orange-400 border border-orange-900/30' 
                           : 'bg-blue-950/50 text-blue-400 border border-blue-900/30'
                       }`}>
-                        {order.deliveryType === 'retirada' ? 'Retirada' : '🔐 Delivery'}
+                        {order.deliveryType === 'local' ? 'Em Loco' : order.deliveryType === 'retirada' ? 'Retirada' : '🔐 Delivery'}
                       </span>
                       
                       <p className="text-[11px] text-neutral-450 truncate">
@@ -710,100 +797,105 @@ export default function App() {
             <div className="flex-1 flex flex-col justify-between">
               
               {/* Receipt Preview Selection toggles */}
-              <div id="receipt-columns-container" className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
+              <div 
+                id="receipt-columns-container" 
+                className={`grid gap-4 flex-1 ${selectedOrder.deliveryType === 'local' ? 'grid-cols-1 max-w-sm mx-auto w-full' : 'grid-cols-1 md:grid-cols-2'}`}
+              >
                 
-                {/* 1. Normal Thermal Receipt Mock (All data) */}
-                <div id="normal-comanda-container" className="flex flex-col relative">
-                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-neutral-400 mb-2.5 block">
-                    Comanda Completa (Via API)
-                  </span>
+                {/* 1. Normal Thermal Receipt Mock (All data) - Hidden for local orders */}
+                {selectedOrder.deliveryType !== 'local' && (
+                  <div id="normal-comanda-container" className="flex flex-col relative">
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-neutral-400 mb-2.5 block">
+                      Comanda Completa (Via API)
+                    </span>
 
-                  <div className={`bg-white text-neutral-950 p-4 font-mono text-[11px] rounded-sm shadow-xl min-h-[360px] max-h-[480px] overflow-y-auto leading-tight relative transition-all border border-neutral-350 ${
-                    printSimulationRunning && (printSimulationType === 'normal' || printSimulationType === 'both') 
-                      ? 'animate-receipt-roll rotate-1 bg-yellow-50/20' 
-                      : ''
-                  }`}>
-                    {/* Receipts Jagged Cut simulation header */}
-                    <div className="absolute top-0 left-0 w-full flex justify-between px-1 bg-neutral-200/50 py-0.5 text-[7px] text-neutral-400 select-none border-b border-dashed border-neutral-350">
-                      <span>✂------- TEAR HERE -------✂</span>
-                      <span>{selectedOrder.id.substring(0, 8)}</span>
-                    </div>
+                    <div className={`bg-white text-neutral-950 p-4 font-mono text-[11px] rounded-sm shadow-xl min-h-[360px] max-h-[480px] overflow-y-auto leading-tight relative transition-all border border-neutral-350 ${
+                      printSimulationRunning && (printSimulationType === 'normal' || printSimulationType === 'both') 
+                        ? 'animate-receipt-roll rotate-1 bg-yellow-50/20' 
+                        : ''
+                    }`}>
+                      {/* Receipts Jagged Cut simulation header */}
+                      <div className="absolute top-0 left-0 w-full flex justify-between px-1 bg-neutral-200/50 py-0.5 text-[7px] text-neutral-400 select-none border-b border-dashed border-neutral-350">
+                        <span>✂------- TEAR HERE -------✂</span>
+                        <span>{selectedOrder.id.substring(0, 8)}</span>
+                      </div>
 
-                    <div className="text-center border-b border-dashed border-neutral-400 pb-2 mb-3 mt-2">
-                      <p className="font-bold text-sm tracking-tight">ARMAZÉM RECHE</p>
-                      <p className="text-xs uppercase font-bold text-red-650 bg-neutral-100 py-0.5 mt-0.5">
-                        {selectedOrder.platform.toUpperCase()} #{selectedOrder.displayId}
-                      </p>
-                      <p className="text-[10px] text-neutral-500 mt-1">EMISSÃO: {new Date(selectedOrder.createdAt).toLocaleString('pt-BR')}</p>
-                    </div>
+                      <div className="text-center border-b border-dashed border-neutral-400 pb-2 mb-3 mt-2">
+                        <p className="font-bold text-sm tracking-tight">ARMAZÉM RECHE</p>
+                        <p className="text-xs uppercase font-bold text-red-650 bg-neutral-100 py-0.5 mt-0.5">
+                          {selectedOrder.platform.toUpperCase()} #{selectedOrder.displayId}
+                        </p>
+                        <p className="text-[10px] text-neutral-500 mt-1">EMISSÃO: {new Date(selectedOrder.createdAt).toLocaleString('pt-BR')}</p>
+                      </div>
 
-                    <div className="mb-3 space-y-0.5 text-[10.5px] border-b border-dashed border-neutral-300 pb-2">
-                      <p><strong>MODO:</strong> {selectedOrder.deliveryType.toUpperCase()}</p>
-                      <p><strong>CLIENTE:</strong> {selectedOrder.customerName}</p>
-                      {selectedOrder.customerPhone && <p><strong>FONE:</strong> {selectedOrder.customerPhone}</p>}
-                      {selectedOrder.customerAddress && (
-                        <div>
-                          <p className="font-semibold mt-0.5">ENDEREÇO:</p>
-                          <p className="text-[10px] text-neutral-600 pl-1">{selectedOrder.customerAddress.formatted}</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Products details */}
-                    <div className="space-y-2 mb-3 border-b border-dashed border-neutral-300 pb-2">
-                      <p className="text-[9px] font-black tracking-widest text-neutral-450 uppercase">PRODUTOS DO PEDIDO</p>
-                      {selectedOrder.items.map((item, idx) => (
-                        <div key={idx} className="space-y-0.5">
-                          <div className="flex justify-between font-bold">
-                            <span>{item.quantity.toString().padStart(2, '0')}x {item.name}</span>
-                            <span>R$ {(item.price * item.quantity).toFixed(2)}</span>
+                      <div className="mb-3 space-y-0.5 text-[10.5px] border-b border-dashed border-neutral-300 pb-2">
+                        <p><strong>MODO:</strong> {selectedOrder.deliveryType.toUpperCase()}</p>
+                        <p><strong>CLIENTE:</strong> {selectedOrder.customerName}</p>
+                        {selectedOrder.customerPhone && <p><strong>FONE:</strong> {selectedOrder.customerPhone}</p>}
+                        {selectedOrder.customerAddress && (
+                          <div>
+                            <p className="font-semibold mt-0.5">ENDEREÇO:</p>
+                            <p className="text-[10px] text-neutral-600 pl-1">{selectedOrder.customerAddress.formatted}</p>
                           </div>
-                          
-                          {/* Compls */}
-                          {item.additionals && item.additionals.length > 0 && item.additionals.map((add, addIdx) => (
-                            <p key={addIdx} className="text-[9.5px] text-neutral-600 pl-3">
-                              + {add.quantity}x {add.name} (R$ {((add.price || 0) * add.quantity).toFixed(2)})
-                            </p>
-                          ))}
+                        )}
+                      </div>
 
-                          {item.observations && (
-                            <p className="text-[9.5px] italic text-red-700 bg-red-50 px-1 py-0.5 rounded-sm inline-block mt-0.5">
-                              ⚠️ Obs: {item.observations}
-                            </p>
-                          )}
+                      {/* Products details */}
+                      <div className="space-y-2 mb-3 border-b border-dashed border-neutral-300 pb-2">
+                        <p className="text-[9px] font-black tracking-widest text-neutral-450 uppercase">PRODUTOS DO PEDIDO</p>
+                        {selectedOrder.items.map((item, idx) => (
+                          <div key={idx} className="space-y-0.5">
+                            <div className="flex justify-between font-bold">
+                              <span>{item.quantity.toString().padStart(2, '0')}x {item.name}</span>
+                              <span>R$ {(item.price * item.quantity).toFixed(2)}</span>
+                            </div>
+                            
+                            {/* Compls */}
+                            {item.additionals && item.additionals.length > 0 && item.additionals.map((add, addIdx) => (
+                              <p key={addIdx} className="text-[9.5px] text-neutral-600 pl-3">
+                                + {add.quantity}x {add.name} (R$ {((add.price || 0) * add.quantity).toFixed(2)})
+                              </p>
+                            ))}
+
+                            {item.observations && (
+                              <p className="text-[9.5px] italic text-red-700 bg-red-50 px-1 py-0.5 rounded-sm inline-block mt-0.5">
+                                ⚠️ Obs: {item.observations}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Payment & Totals details */}
+                      <div className="space-y-1 text-right text-[10.5px]">
+                        <p className="text-neutral-500 text-left text-[9px] mb-1 font-semibold uppercase">
+                          FORMA: <span className="text-neutral-900 font-bold">{selectedOrder.paymentMethod}</span> ({selectedOrder.paymentType})
+                        </p>
+                        {selectedOrder.changeFor && (
+                          <p className="text-left font-bold text-neutral-700 text-[10px]">
+                            Troco para R$ {selectedOrder.changeFor.toFixed(2)} (Troco: R$ {(selectedOrder.changeFor - selectedOrder.total).toFixed(2)})
+                          </p>
+                        )}
+                        
+                        <div className="border-t border-neutral-200 pt-1.5 space-y-0.5 font-mono">
+                          <p>SUBTOTAL: R$ {selectedOrder.subtotal.toFixed(2)}</p>
+                          <p>ENTREGA: R$ {selectedOrder.deliveryFee.toFixed(2)}</p>
+                          {selectedOrder.discount && selectedOrder.discount > 0 ? (
+                            <p className="text-red-650">DESCONTO: -R$ {selectedOrder.discount.toFixed(2)}</p>
+                          ) : null}
+                          <p className="font-extrabold text-xs text-neutral-900 border-t border-dashed border-neutral-400 pt-1 mt-1 text-right">
+                            TOTAL: R$ {selectedOrder.total.toFixed(2)}
+                          </p>
                         </div>
-                      ))}
-                    </div>
+                      </div>
 
-                    {/* Payment & Totals details */}
-                    <div className="space-y-1 text-right text-[10.5px]">
-                      <p className="text-neutral-500 text-left text-[9px] mb-1 font-semibold uppercase">
-                        FORMA: <span className="text-neutral-900 font-bold">{selectedOrder.paymentMethod}</span> ({selectedOrder.paymentType})
-                      </p>
-                      {selectedOrder.changeFor && (
-                        <p className="text-left font-bold text-neutral-700 text-[10px]">
-                          Troco para R$ {selectedOrder.changeFor.toFixed(2)} (Troco: R$ {(selectedOrder.changeFor - selectedOrder.total).toFixed(2)})
-                        </p>
-                      )}
-                      
-                      <div className="border-t border-neutral-200 pt-1.5 space-y-0.5 font-mono">
-                        <p>SUBTOTAL: R$ {selectedOrder.subtotal.toFixed(2)}</p>
-                        <p>ENTREGA: R$ {selectedOrder.deliveryFee.toFixed(2)}</p>
-                        {selectedOrder.discount && selectedOrder.discount > 0 ? (
-                          <p className="text-red-650">DESCONTO: -R$ {selectedOrder.discount.toFixed(2)}</p>
-                        ) : null}
-                        <p className="font-extrabold text-xs text-neutral-900 border-t border-dashed border-neutral-400 pt-1 mt-1 text-right">
-                          TOTAL: R$ {selectedOrder.total.toFixed(2)}
-                        </p>
+                      <div className="mt-4 pt-2 border-t border-dashed border-neutral-300 text-center text-[9px] text-neutral-500">
+                        <p>Obrigado pelo seu pedido!</p>
+                        <p className="font-mono tracking-tighter mt-1 text-[8px]">POWERED BY ARMAZÉM RECHE</p>
                       </div>
                     </div>
-
-                    <div className="mt-4 pt-2 border-t border-dashed border-neutral-300 text-center text-[9px] text-neutral-500">
-                      <p>Obrigado pelo seu pedido!</p>
-                      <p className="font-mono tracking-tighter mt-1 text-[8px]">POWERED BY ARMAZÉM RECHE</p>
-                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* 2. Standardized kitchen Receipt (Only specific fields required!) */}
                 <div id="kitchen-comanda-container" className="flex flex-col relative text-neutral-950">
@@ -820,19 +912,24 @@ export default function App() {
                     <div className="absolute top-0 left-0 w-full h-1.5 bg-yellow-450"></div>
                     
                     {/* Simplified Header */}
-                    <div className="flex justify-between items-center border-b-2 border-neutral-900 pb-2 mb-3 pt-1">
-                      <span className="bg-neutral-950 text-white font-black px-2.5 py-1 text-base leading-none">
-                        #{selectedOrder.displayId}
-                      </span>
-                      <div className="text-right">
-                        <span className="text-[9px] font-bold text-neutral-500 block">HORA</span>
-                        <span className="font-black text-sm">{selectedOrder.orderTime}</span>
+                    <div className="border-b-2 border-neutral-900 pb-2 mb-3 pt-1">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="bg-neutral-950 text-white font-black px-2.5 py-1 text-base leading-none">
+                          #{selectedOrder.displayId}
+                        </span>
+                        <div className="text-right">
+                          <span className="text-[9px] font-bold text-neutral-500 block">HORA</span>
+                          <span className="font-black text-sm">{selectedOrder.orderTime}</span>
+                        </div>
                       </div>
+                      <p className="text-[11px] font-black uppercase text-neutral-900 mt-1 truncate">
+                        CLIENTE: {selectedOrder.customerName}
+                      </p>
                     </div>
 
                     {/* Delivery or Collection type */}
                     <div className="bg-neutral-950 text-yellow-400 px-3 py-1 text-center font-extrabold text-xs uppercase tracking-widest mb-3 rounded-sm">
-                      {selectedOrder.deliveryType === 'retirada' ? 'RETIRADA EM LOJA' : 'ENTREGA (DELIVERY)'}
+                      {selectedOrder.deliveryType === 'local' ? 'PEDIDO EM LOCO' : selectedOrder.deliveryType === 'retirada' ? 'RETIRADA EM LOJA' : 'ENTREGA (DELIVERY)'}
                     </div>
 
                     {/* Content Section - ONLY target details: quantities, item itself, additionals, and observation */}
@@ -903,8 +1000,9 @@ export default function App() {
                 <button
                   id="btn-print-normal"
                   onClick={() => handlePrint(selectedOrder.id, 'normal')}
-                  disabled={printSimulationRunning}
-                  className="py-2.5 bg-neutral-800 hover:bg-neutral-750 disabled:bg-neutral-900 disabled:text-neutral-600 text-neutral-200 text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer border border-neutral-700/60 transition"
+                  disabled={printSimulationRunning || selectedOrder.deliveryType === 'local'}
+                  className="py-2.5 bg-neutral-800 hover:bg-neutral-750 disabled:bg-neutral-905 disabled:text-neutral-600 disabled:opacity-40 disabled:cursor-not-allowed text-neutral-200 text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer border border-neutral-700/60 transition"
+                  title={selectedOrder.deliveryType === 'local' ? "Disponível apenas via cozinha para pedidos locais" : "Imprimir via principal completa"}
                 >
                   <Printer className="w-4 h-4 text-neutral-300" />
                   Imprimir Completa
@@ -923,8 +1021,9 @@ export default function App() {
                 <button
                   id="btn-print-both"
                   onClick={() => handlePrint(selectedOrder.id, 'both')}
-                  disabled={printSimulationRunning}
-                  className="py-2.5 bg-yellow-400 hover:bg-yellow-500 text-neutral-950 disabled:bg-neutral-850 disabled:text-neutral-500 text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition shadow-md shadow-yellow-450/10"
+                  disabled={printSimulationRunning || selectedOrder.deliveryType === 'local'}
+                  className="py-2.5 bg-yellow-400 hover:bg-yellow-500 text-neutral-950 disabled:bg-neutral-850 disabled:text-neutral-500 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition shadow-md shadow-yellow-450/10"
+                  title={selectedOrder.deliveryType === 'local' ? "Disponível apenas via cozinha para pedidos locais" : "Imprimir ambas as vias"}
                 >
                   <Printer className="w-4 h-4" />
                   Imprimir Comandas
@@ -933,7 +1032,18 @@ export default function App() {
               </div>
 
               {/* Bottom Quick actions */}
-              <div className="flex justify-end gap-2.5 mt-3 pt-3 border-t border-neutral-850/65">
+              <div className="flex justify-between items-center gap-2.5 mt-3 pt-3 border-t border-neutral-850/65">
+                <div>
+                  <button
+                    id="btn-edit-comanda-quick"
+                    onClick={() => handleOpenEditLocalOrderModal(selectedOrder)}
+                    className="px-3.5 py-1.5 bg-neutral-850 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    title="Editar informações do pedido"
+                  >
+                    <Edit className="w-3.5 h-3.5 text-neutral-400" />
+                    Editar Pedido
+                  </button>
+                </div>
                 <button
                   id="btn-delete-comanda-quick"
                   onClick={() => handleDeleteOrder(selectedOrder.id)}
@@ -982,13 +1092,15 @@ export default function App() {
                       const channelLabel: Record<OrderPlatform, string> = {
                         ifood: 'iF',
                         anotai: 'An',
-                        deliverymuch: 'DM'
+                        deliverymuch: 'DM',
+                        local: 'LC'
                       };
 
                       const colorLabel: Record<OrderPlatform, string> = {
                         ifood: 'text-red-400 bg-red-950/20',
                         anotai: 'text-violet-400 bg-violet-950/20',
-                        deliverymuch: 'text-emerald-400 bg-emerald-950/20'
+                        deliverymuch: 'text-emerald-400 bg-emerald-950/20',
+                        local: 'text-yellow-400 bg-yellow-950/20'
                       };
 
                       return (
@@ -1062,6 +1174,16 @@ export default function App() {
       <footer className="py-4 px-6 text-center text-xs text-neutral-500 border-t border-neutral-900 bg-neutral-950 mt-12">
         <p>© 2026 Armazém Reche • Todos os direitos reservados. Plataforma de recepção e impressão integrada com iFood, Anota.ai e Delivery Much.</p>
       </footer>
+
+      <LocalOrderModal
+        isOpen={isLocalModalOpen}
+        onClose={() => {
+          setIsLocalModalOpen(false);
+          setOrderToEdit(null);
+        }}
+        onSave={handleSaveLocalOrder}
+        orderToEdit={orderToEdit}
+      />
     </div>
   );
 }

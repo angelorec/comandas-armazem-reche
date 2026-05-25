@@ -6,7 +6,9 @@ import { normalizeOrder } from './src/utils/normalizer';
 import { NormalizedOrder, OrderPlatform } from './src/types';
 
 const PORT = 3000;
-const DB_FILE = path.join(process.cwd(), 'orders_db.json');
+const DB_FILE = process.env.VERCEL
+  ? path.join('/tmp', 'orders_db.json')
+  : path.join(process.cwd(), 'orders_db.json');
 
 // Realistic Mock Payloads for standard initialization
 const DEFAULT_MOCKS = [
@@ -200,10 +202,9 @@ function saveDatabase() {
   }
 }
 
-async function start() {
-  loadDatabase();
-  const app = express();
-  app.use(express.json());
+const app = express();
+app.use(express.json());
+loadDatabase();
 
   // API - Get all orders
   app.get('/api/orders', (req, res) => {
@@ -274,6 +275,76 @@ async function start() {
       res.json({ success: true, order: orders[idx] });
     } else {
       res.status(404).json({ error: 'Order not found' });
+    }
+  });
+
+  // API - Create custom/local order
+  app.post('/api/orders/local', (req, res) => {
+    try {
+      const { customerName, deliveryType, items, paymentMethod, total } = req.body;
+      
+      const displayIdNum = orders.length > 0 
+        ? Math.max(...orders.map(o => {
+            const rawId = o.displayId.replace('#', '');
+            const parsed = parseInt(rawId);
+            return isNaN(parsed) ? 1000 : parsed;
+          })) + 1 
+        : 1001;
+
+      const newOrder: NormalizedOrder = {
+        id: `local-${Date.now()}`,
+        displayId: `#${displayIdNum}`,
+        platform: 'local',
+        createdAt: new Date().toISOString(),
+        orderTime: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        deliveryType: deliveryType || 'local',
+        customerName: customerName || 'Pedido Local',
+        customerPhone: '',
+        items: items || [],
+        paymentMethod: paymentMethod || 'Dinheiro',
+        paymentType: 'OFFLINE',
+        subtotal: total || 0,
+        deliveryFee: 0,
+        total: total || 0,
+        printed: false,
+        printedKitchen: false,
+        status: 'pending',
+        rawPayload: req.body
+      };
+
+      orders.unshift(newOrder);
+      saveDatabase();
+      res.status(201).json({ success: true, order: newOrder });
+    } catch (e: any) {
+      res.status(400).json({ error: 'Erro ao criar pedido local', message: e?.message });
+    }
+  });
+
+  // API - Edit custom/local order (or general orders)
+  app.put('/api/orders/:id', (req, res) => {
+    try {
+      const { id } = req.params;
+      const { customerName, deliveryType, items, paymentMethod, total, status } = req.body;
+      const idx = orders.findIndex(o => o.id === id);
+      
+      if (idx !== -1) {
+        orders[idx] = {
+          ...orders[idx],
+          customerName: customerName !== undefined ? customerName : orders[idx].customerName,
+          deliveryType: deliveryType !== undefined ? deliveryType : orders[idx].deliveryType,
+          items: items !== undefined ? items : orders[idx].items,
+          paymentMethod: paymentMethod !== undefined ? paymentMethod : orders[idx].paymentMethod,
+          total: total !== undefined ? total : orders[idx].total,
+          subtotal: total !== undefined ? total : orders[idx].subtotal,
+          status: status !== undefined ? status : orders[idx].status,
+        };
+        saveDatabase();
+        res.json({ success: true, order: orders[idx] });
+      } else {
+        res.status(404).json({ error: 'Pedido não encontrado' });
+      }
+    } catch (e: any) {
+      res.status(400).json({ error: 'Erro ao editar pedido', message: e?.message });
     }
   });
 
@@ -392,7 +463,13 @@ async function start() {
     }
   });
 
-  // Integration of web assets (Vite dev middleware vs Production static serve)
+// Start dev server / listen or setup build paths if NOT running as serverless function
+async function startServer() {
+  if (process.env.VERCEL) {
+    // Vercel handles static file hosting (Vite dist) automatically. No need to bind listener.
+    return;
+  }
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -412,6 +489,8 @@ async function start() {
   });
 }
 
-start().catch((err) => {
+startServer().catch((err) => {
   console.error("Erro fatal ao iniciar servidor:", err);
 });
+
+export default app;

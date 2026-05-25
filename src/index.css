@@ -3,10 +3,15 @@
 @layer utilities {
   /* Print Styles - Hides background, sidebar, filters and centers the receipt for physical thermal printing */
   @media print {
+    @page {
+      size: 80mm auto;
+      margin: 0mm !important;
+    }
+
     body {
       background-color: white !important;
       color: black !important;
-      font-size: 12px !important;
+      font-size: 11px !important;
       font-family: 'Courier New', Courier, monospace !important;
       margin: 0 !important;
       padding: 0 !important;
@@ -41,10 +46,11 @@
     .clean-print-paper {
       border: none !important;
       box-shadow: none !important;
-      padding: 0 !important;
-      margin: 0 !important;
-      width: 80mm !important; /* Standard 80mm thermal receipt width */
-      max-width: 80mm !important;
+      padding: 1mm !important;
+      margin: 0 auto !important;
+      width: 72mm !important; /* Standard printable width for Epson TM-T 80mm printers at 203dpi */
+      max-width: 72mm !important;
+      box-sizing: border-box !important;
     }
   }
 

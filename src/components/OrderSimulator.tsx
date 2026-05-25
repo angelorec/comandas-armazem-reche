@@ -148,6 +148,15 @@ const TEMPLATES: Record<OrderPlatform, any> = {
       type: "offline",
       change: null
     }
+  },
+  local: {
+    customerName: "Mesa 04 (Carlos)",
+    deliveryType: "local",
+    items: [
+      { name: "Hambúrguer Reche Artesanal", quantity: 1, price: 0, observations: "Ponto da carne: bem passado." }
+    ],
+    paymentMethod: "Dinheiro",
+    total: 0
   }
 };
 
@@ -252,12 +261,14 @@ export default function OrderSimulator({ onOrderAdded }: SimulatorProps) {
             const labels: Record<OrderPlatform, string> = {
               ifood: 'iFood Webhook',
               anotai: 'Anota.ai API',
-              deliverymuch: 'Delivery Much'
+              deliverymuch: 'Delivery Much',
+              local: 'Pedido Local'
             };
             const activeColors: Record<OrderPlatform, string> = {
               ifood: 'text-red-400 border border-red-500/30 bg-red-500/10',
               anotai: 'text-violet-400 border border-violet-500/30 bg-violet-500/10',
-              deliverymuch: 'text-emerald-400 border border-emerald-500/30 bg-emerald-500/10'
+              deliverymuch: 'text-emerald-400 border border-emerald-500/30 bg-emerald-500/10',
+              local: 'text-yellow-400 border border-yellow-500/30 bg-yellow-500/10'
             };
             return (
               <button
