@@ -1,0 +1,6 @@
+{
+  "name": "Armazém Reche Comandas",
+  "description": "Plataforma de recepção, padronização e impressão de comandas para iFood, Anota.ai e Delivery Much.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

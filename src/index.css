@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@layer utilities {
+  /* Print Styles - Hides background, sidebar, filters and centers the receipt for physical thermal printing */
+  @media print {
+    body {
+      background-color: white !important;
+      color: black !important;
+      font-size: 12px !important;
+      font-family: 'Courier New', Courier, monospace !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    
+    #root {
+      width: 100% !important;
+      max-width: 100% !important;
+    }
+
+    #app-logo-container,
+    #stats-dashboard-grid,
+    #simulator-container,
+    header,
+    section:not(.printable-section),
+    button,
+    footer,
+    nav {
+      display: none !important;
+    }
+
+    .printable-section {
+      display: block !important;
+      width: 100% !important;
+      position: absolute !important;
+      left: 0 !important;
+      top: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    .clean-print-paper {
+      border: none !important;
+      box-shadow: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      width: 80mm !important; /* Standard 80mm thermal receipt width */
+      max-width: 80mm !important;
+    }
+  }
+
+  /* Receipt Roll-Out Animation */
+  @keyframes receipt-roll {
+    0% {
+      transform: translateY(-80px);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .animate-receipt-roll {
+    animation: receipt-roll 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  /* Audio Visualizer Waves */
+  @keyframes sound-wave {
+    0%, 100% { height: 4px; }
+    50% { height: 18px; }
+  }
+
+  .sound-bar {
+    display: inline-block;
+    width: 2.5px;
+    background-color: #facc15;
+    margin: 0 1px;
+    border-radius: 9999px;
+  }
+  
+  .sound-bar:nth-child(1) { animation: sound-wave 0.6s infinite ease-in-out; }
+  .sound-bar:nth-child(2) { animation: sound-wave 0.4s infinite ease-in-out 0.1s; }
+  .sound-bar:nth-child(3) { animation: sound-wave 0.8s infinite ease-in-out 0.2s; }
+  .sound-bar:nth-child(4) { animation: sound-wave 0.5s infinite ease-in-out 0.3s; }
+}
+
