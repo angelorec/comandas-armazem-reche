@@ -381,33 +381,31 @@ export default function App() {
       )}
 
       {/* High Density Header Layout */}
-      <header className="bg-yellow-400 text-neutral-950 border-b border-neutral-900 py-3 px-4 md:px-6 flex flex-col sm:flex-row justify-between items-center gap-3 sticky top-0 z-50 shadow-md">
+      <header className="bg-neutral-900 text-neutral-100 border-b border-neutral-800 py-3.5 px-4 md:px-6 flex flex-col sm:flex-row justify-between items-center gap-3 sticky top-0 z-50 shadow-lg shadow-neutral-950/20 backdrop-blur-md">
         <div className="flex items-center gap-4">
-          <div className="bg-neutral-950 text-yellow-400 p-2 font-black text-xl tracking-tighter rounded border border-neutral-900 block md:hidden">
+          <div className="bg-neutral-950 text-yellow-400 p-2 font-black text-xl tracking-tighter rounded-lg border border-neutral-850 block md:hidden">
             AR
           </div>
-          <h1 className="text-neutral-950 font-extrabold text-xl sm:text-2xl uppercase tracking-tighter flex items-center gap-2">
-            <ChefHat className="w-6 h-6 stroke-[2.5]" />
-            Armazém Reche <span className="font-light opacity-85 lowercase text-lg sm:text-xl tracking-normal">comandas</span>
+          <h1 className="text-neutral-50 font-extrabold text-xl sm:text-2xl uppercase tracking-tighter flex items-center gap-2">
+            <ChefHat className="w-6 h-6 stroke-[2.5] text-yellow-400" />
+            Armazém Reche <span className="font-light opacity-70 lowercase text-lg sm:text-xl tracking-normal text-neutral-400">comandas</span>
           </h1>
         </div>
 
         {/* Integration Status Flags */}
-        <div className="flex items-center gap-2 flex-wrap text-[11px] font-bold">
-          <div className="flex gap-2 text-neutral-900 uppercase bg-neutral-950/10 px-3 py-1 rounded-md border border-neutral-950/10">
-            <span className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-650 animate-pulse"></span>
-              iFood <strong className="text-neutral-950">INTEGRADO</strong>
+        <div className="flex items-center gap-3.5 flex-wrap text-[11px] font-bold">
+          <div className="flex gap-2.5 items-center flex-wrap">
+            <span className="flex items-center gap-2 px-2.5 py-1 bg-neutral-950/60 border border-neutral-800/80 rounded-lg text-neutral-300">
+              <span className="w-2 h-2 rounded-full bg-red-550 animate-pulse"></span>
+              iFood <span className="text-neutral-500 font-normal">INTEGRADO</span>
             </span>
-            <span className="text-neutral-950/30">|</span>
-            <span className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-violet-650 animate-pulse"></span>
-              Anota.ai <strong className="text-neutral-950">INTEGRADO</strong>
+            <span className="flex items-center gap-2 px-2.5 py-1 bg-neutral-950/60 border border-neutral-800/80 rounded-lg text-neutral-300">
+              <span className="w-2 h-2 rounded-full bg-violet-550 animate-pulse"></span>
+              Anota.ai <span className="text-neutral-500 font-normal">INTEGRADO</span>
             </span>
-            <span className="text-neutral-950/30">|</span>
-            <span className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-655 animate-pulse"></span>
-              Delivery Much <strong className="text-neutral-950">INTEGRADO</strong>
+            <span className="flex items-center gap-2 px-2.5 py-1 bg-neutral-950/60 border border-neutral-800/80 rounded-lg text-neutral-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-550 animate-pulse"></span>
+              Delivery Much <span className="text-neutral-500 font-normal">INTEGRADO</span>
             </span>
           </div>
 
@@ -415,20 +413,20 @@ export default function App() {
           <button 
             id="btn-toggle-sounds"
             onClick={() => setPrintSoundEnabled(!printSoundEnabled)}
-            className={`p-1 rounded-md cursor-pointer transition ${printSoundEnabled ? 'text-neutral-950 hover:bg-neutral-950/15' : 'text-neutral-600'}`}
+            className={`p-2 rounded-lg cursor-pointer transition border border-neutral-800 bg-neutral-950/40 ${printSoundEnabled ? 'text-yellow-400 hover:text-yellow-300 hover:bg-neutral-800' : 'text-neutral-600 hover:text-neutral-500'}`}
             title={printSoundEnabled ? 'Silenciar som da impressora' : 'Ativar som da impressora'}
           >
             {printSoundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
 
-          <span className="bg-neutral-950 text-yellow-400 font-mono font-black text-xs px-2.5 py-1 rounded">
+          <span className="bg-neutral-950 text-yellow-400 font-mono font-bold text-xs px-3 py-1.5 rounded-lg border border-neutral-800">
             {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>
       </header>
 
       {/* Main Grid Viewport */}
-      <main className="flex-1 p-3 md:p-5 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-5 overflow-hidden">
+      <main className="flex-1 p-4 md:p-6 max-w-[1720px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-5 overflow-hidden">
         
         {/* Full-Width stats overview banner bar */}
         <div className="col-span-12">
@@ -439,22 +437,29 @@ export default function App() {
           />
 
           {/* Quick Sandbox Simulator Toggle Header Banner */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-3 mb-5 flex items-center justify-between shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="h-2 w-2 rounded-full bg-yellow-400 animate-ping"></div>
+          <div className="bg-neutral-900/40 border border-neutral-800/60 rounded-2xl px-5 py-4 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-lg shadow-neutral-950/15 backdrop-blur-sm">
+            <div className="flex items-center gap-3.5">
+              <span className="flex h-2.5 w-2.5 relative shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-450 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-yellow-400"></span>
+              </span>
               <div>
-                <span className="text-sm font-bold text-neutral-200">Painel de Testes & Simulação de Webhook</span>
-                <p className="text-xs text-neutral-500">Injete comanda de modelo iFood, Anota.ai ou Delivery Much para verificar a formatação em tempo real.</p>
+                <span className="text-sm font-bold text-neutral-100 flex items-center gap-1.5">Painel de Testes & Simulação de Webhook</span>
+                <p className="text-xs text-neutral-400 mt-0.5">Injete comanda de modelo iFood, Anota.ai ou Delivery Much para verificar a formatação em tempo real.</p>
               </div>
             </div>
             <button
               id="btn-toggle-simulator"
               onClick={() => setIsSimulatorOpen(!isSimulatorOpen)}
-              className="bg-neutral-800 hover:bg-neutral-700 text-yellow-400 px-3 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition"
+              className={`px-4 py-2 text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer transition border ${
+                isSimulatorOpen 
+                  ? 'bg-yellow-400 text-neutral-900 border-yellow-500 font-extrabold hover:bg-yellow-500 shadow-md shadow-yellow-400/10' 
+                  : 'bg-neutral-950 text-yellow-400 border-neutral-800 hover:border-neutral-700 hover:text-yellow-300 hover:bg-neutral-900'
+              }`}
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
               {isSimulatorOpen ? 'Ocultar Simulador' : 'Exibir Simulador'}
-              {isSimulatorOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              {isSimulatorOpen ? <ChevronUp className="w-3.5 h-3.5 shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 shrink-0" />}
             </button>
           </div>
 
@@ -467,7 +472,7 @@ export default function App() {
         </div>
 
         {/* COLUMN 1: LIVE ORDERS LISTING AND QUEUE (Left column, 4 cols width on desktop) */}
-        <section id="sidebar-queue-column" className="lg:col-span-4 flex flex-col bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden shadow-md max-h-[720px] lg:max-h-[850px]">
+        <section id="sidebar-queue-column" className="lg:col-span-4 flex flex-col bg-neutral-900 border border-neutral-800/80 rounded-xl overflow-hidden shadow-lg lg:h-[780px]">
           
           {/* Header Controls for Queue search & filters */}
           <div className="p-3 border-b border-neutral-800 bg-neutral-900/50 space-y-2.5">
@@ -667,7 +672,7 @@ export default function App() {
         </section>
 
         {/* COLUMN 2: PRIMARY PRINT PREVIEW PANEL (Center element, 5 cols screen width) */}
-        <section id="print-visualization-column" className="lg:col-span-5 bg-neutral-900 border border-neutral-800 rounded-xl p-4 md:p-5 flex flex-col justify-between shadow-md overflow-hidden relative">
+        <section id="print-visualization-column" className="lg:col-span-5 flex flex-col bg-neutral-900 border border-neutral-800/80 rounded-xl p-4 md:p-5 justify-between shadow-lg overflow-hidden relative lg:h-[780px]">
           
           <div className="flex items-center justify-between border-b border-neutral-850 pb-3 mb-4">
             <div>
@@ -901,7 +906,7 @@ export default function App() {
                   disabled={printSimulationRunning}
                   className="py-2.5 bg-neutral-800 hover:bg-neutral-750 disabled:bg-neutral-900 disabled:text-neutral-600 text-neutral-200 text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer border border-neutral-700/60 transition"
                 >
-                  <Printer className="w-4 h-4 text-neutral-400" />
+                  <Printer className="w-4 h-4 text-neutral-300" />
                   Imprimir Completa
                 </button>
 
@@ -909,9 +914,9 @@ export default function App() {
                   id="btn-print-kitchen"
                   onClick={() => handlePrint(selectedOrder.id, 'kitchen')}
                   disabled={printSimulationRunning}
-                  className="py-2.5 bg-yellow-400 hover:bg-yellow-500 text-neutral-950 disabled:bg-neutral-850 disabled:text-neutral-500 text-xs font-extrabold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition"
+                  className="py-2.5 bg-neutral-800 hover:bg-neutral-750 disabled:bg-neutral-900 disabled:text-neutral-500 text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer border border-neutral-700/60 transition"
                 >
-                  <Printer className="w-4 h-4" />
+                  <Printer className="w-4 h-4 text-neutral-300" />
                   Imprimir Cozinha
                 </button>
 
@@ -919,43 +924,16 @@ export default function App() {
                   id="btn-print-both"
                   onClick={() => handlePrint(selectedOrder.id, 'both')}
                   disabled={printSimulationRunning}
-                  className="py-2.5 bg-neutral-950 hover:bg-neutral-900 hover:text-yellow-400 text-neutral-300 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition border border-neutral-800"
+                  className="py-2.5 bg-yellow-400 hover:bg-yellow-500 text-neutral-950 disabled:bg-neutral-850 disabled:text-neutral-500 text-xs font-extrabold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition shadow-md shadow-yellow-450/10"
                 >
-                  <Printer className="w-4 h-4 text-yellow-400" />
-                  Mudar status p/ Impresso
-                </button>
-
-                {/* Print natively via Browser */}
-                <button
-                  id="btn-print-browser"
-                  onClick={printDirectly}
-                  className="md:col-span-3 py-2 bg-neutral-900 hover:bg-neutral-850 text-neutral-400 hover:text-yellow-400 rounded-lg text-[11px] font-bold border border-neutral-850 flex items-center justify-center gap-2 mt-1 cursor-pointer transition"
-                  title="Abre a caixa de diálogo de impressão do navegador"
-                >
-                  <ExternalLink className="w-3 h-3 text-yellow-450" />
-                  Disparar Impressora Física do Navegador (80mm)
+                  <Printer className="w-4 h-4" />
+                  Imprimir Comandas
                 </button>
 
               </div>
 
-              {/* Bottom Quick actions like complete or cancel */}
-              <div className="flex justify-between gap-2.5 mt-3 pt-3 border-t border-neutral-850/65">
-                <button
-                  id="btn-cancel-comanda"
-                  onClick={() => handleUpdateStatus(selectedOrder.id, 'canceled')}
-                  className="px-3 py-1.5 bg-red-950/40 hover:bg-red-900/30 text-red-400 text-xs font-medium rounded-lg transition"
-                >
-                  Marcar como Cancelada
-                </button>
-                
-                <button
-                  id="btn-unread-comanda"
-                  onClick={() => handleUpdateStatus(selectedOrder.id, 'pending')}
-                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 text-xs font-medium rounded-lg transition"
-                >
-                  Marcar como Pendente
-                </button>
-
+              {/* Bottom Quick actions */}
+              <div className="flex justify-end gap-2.5 mt-3 pt-3 border-t border-neutral-850/65">
                 <button
                   id="btn-delete-comanda-quick"
                   onClick={() => handleDeleteOrder(selectedOrder.id)}
@@ -971,7 +949,7 @@ export default function App() {
         </section>
 
         {/* COLUMN 3: ORDER HISTORY LISTING GROUPED BY DAY AND HOUR (Right column, 3 cols wide on screen) */}
-        <section id="history-scroller-column" className="lg:col-span-3 flex flex-col bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden shadow-md max-h-[720px] lg:max-h-[850px]">
+        <section id="history-scroller-column" className="lg:col-span-3 flex flex-col bg-neutral-900 border border-neutral-800/80 rounded-xl overflow-hidden shadow-lg lg:h-[780px]">
           
           <div className="p-3 bg-neutral-900/50 border-b border-neutral-800 space-y-1">
             <h2 className="text-sm font-bold uppercase tracking-widest text-neutral-350 flex items-center gap-1.5">
