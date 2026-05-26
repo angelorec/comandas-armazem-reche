@@ -8,6 +8,17 @@ function removeAccents(str: string): string {
   return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
+// Helper function to clean additional item names
+function formatAdditionalName(name: string): string {
+  if (!name) return '';
+  return name
+    .replace(/^Adicional:\s*/i, '')
+    .replace(/^Adicional\s+/i, '')
+    .replace('Pastel: ', '')
+    .replace(' (Marmitex/Lá Minuta)', '')
+    .trim();
+}
+
 interface LocalOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -589,14 +600,14 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
               </div>
 
               {/* Dynamic Additionals Grid */}
-              <div className="space-y-2 col-span-12">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                  <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
+              <div className="space-y-4 col-span-12 mt-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <label className="text-xs font-extrabold text-neutral-300 uppercase tracking-widest block flex items-center gap-1.5">
                     🍟 Adicionais Extras do Produto
                   </label>
                   
                   {/* Categorization Tabs */}
-                  <div className="flex flex-wrap gap-1 bg-neutral-950 p-0.5 rounded-md border border-neutral-850">
+                  <div className="flex flex-wrap gap-1 bg-neutral-950 p-1 rounded-xl border border-neutral-850">
                     {['suggerito', 'pastel', 'pratos', 'doces', 'todos'].map((cat) => {
                       const labels: Record<string, string> = {
                         suggerito: '✨ Sugeridos',
@@ -615,10 +626,10 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
                           onClick={() => {
                             setActiveCategory(cat as any);
                           }}
-                          className={`text-[9px] font-bold px-2 py-1 rounded transition whitespace-nowrap cursor-pointer ${
+                          className={`text-[10px] sm:text-xs font-bold px-3 py-1.5 rounded-lg transition-all whitespace-nowrap cursor-pointer shadow-sm ${
                             isSel
-                              ? 'bg-yellow-400 text-neutral-950 font-extrabold'
-                              : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900'
+                              ? 'bg-yellow-400 text-neutral-950 font-black scale-[1.02]'
+                              : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900 border border-transparent'
                           }`}
                         >
                           {labels[cat]}
@@ -629,9 +640,9 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
                 </div>
 
                 {dbAdditionals.length === 0 ? (
-                  <p className="text-[10px] text-neutral-500 italic">Nenhum adicional disponível no momento.</p>
+                  <p className="text-xs text-neutral-500 italic">Nenhum adicional disponível no momento.</p>
                 ) : (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 bg-neutral-900/60 p-2.5 rounded-lg border border-neutral-800">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-neutral-950/60 p-4 rounded-xl border border-neutral-800/60 shadow-inner">
                     {(() => {
                       const activeCat = activeCategory;
                       const lowerName = itemName.toLowerCase();
@@ -663,7 +674,7 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
 
                       if (filteredAdds.length === 0) {
                         return (
-                          <div className="col-span-full py-4 text-center text-xs text-neutral-500 italic">
+                          <div className="col-span-full py-6 text-center text-xs text-neutral-500 italic">
                             Nenhum adicional nesta categoria.
                           </div>
                         );
@@ -681,17 +692,17 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
                                 [add.id]: !prev[add.id]
                               }));
                             }}
-                            className={`flex items-center justify-between p-2 rounded-lg border text-left cursor-pointer transition select-none ${
+                            className={`flex items-center justify-between p-3 rounded-xl border text-left cursor-pointer transition-all duration-150 select-none hover:scale-[1.01] active:scale-[0.99] gap-2 ${
                               isSelected
-                                ? 'bg-yellow-400/15 border-yellow-400 text-yellow-300 font-extrabold shadow-sm'
-                                : 'bg-neutral-950 border-neutral-850 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200'
+                                ? 'bg-yellow-400/15 border-yellow-400 text-yellow-300 font-extrabold shadow-md shadow-yellow-500/5 scale-[1.01]'
+                                : 'bg-neutral-900 border-neutral-850 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200'
                             }`}
                           >
-                            <span className="text-[10.5px] truncate max-w-[130px] font-medium">
-                              {add.nome.replace('Pastel: ', '').replace(' (Marmitex/Lá Minuta)', '')}
+                            <span className="text-xs sm:text-[13px] font-bold leading-tight flex-1 break-words py-0.5">
+                              {formatAdditionalName(add.nome)}
                             </span>
-                            <span className="text-[9.5px] font-mono text-yellow-500 bg-neutral-900 border border-neutral-800/80 px-1 py-0.5 rounded ml-1 font-bold whitespace-nowrap">
-                              +R${Number(add.preco).toFixed(1)}
+                            <span className="text-[10.5px] sm:text-xs font-mono text-yellow-400 bg-neutral-950/90 border border-neutral-850 px-2 py-1 rounded font-extrabold whitespace-nowrap shadow-sm shrink-0">
+                              +R$ {Number(add.preco).toFixed(2)}
                             </span>
                           </button>
                         );
@@ -760,7 +771,7 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
                           <div className="flex flex-wrap gap-1 mt-1">
                             {item.additionals.map((add, addIdx) => (
                               <span key={addIdx} className="text-[9.5px] font-semibold text-yellow-400 bg-yellow-950/20 px-1.5 py-0.5 rounded border border-yellow-950/50">
-                                + {add.name} (+R$ {Number(add.price).toFixed(2)})
+                                + {formatAdditionalName(add.name)} (+R$ {Number(add.price).toFixed(2)})
                               </span>
                             ))}
                           </div>

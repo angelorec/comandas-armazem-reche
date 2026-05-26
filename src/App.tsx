@@ -13,6 +13,16 @@ import CommandLogo from './components/CommandLogo';
 import LocalOrderModal from './components/LocalOrderModal';
 import ComandaHistoryModal from './components/ComandaHistoryModal';
 
+const formatAddName = (name: string): string => {
+  if (!name) return '';
+  return name
+    .replace(/^Adicional:\s*/i, '')
+    .replace(/^Adicional\s+/i, '')
+    .replace('Pastel: ', '')
+    .replace(' (Marmitex/Lá Minuta)', '')
+    .trim();
+};
+
 export default function App() {
   const [orders, setOrders] = useState<NormalizedOrder[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -390,7 +400,7 @@ export default function App() {
                         )}
                         {item.additionals && item.additionals.length > 0 && item.additionals.map((add, addIdx) => (
                           <p key={addIdx} className="text-[10px] text-neutral-600 pl-3">
-                            + {add.quantity}x {add.name} (R$ {((add.price || 0) * add.quantity).toFixed(2)})
+                            + {add.quantity}x {formatAddName(add.name)} (R$ {((add.price || 0) * add.quantity).toFixed(2)})
                           </p>
                         ))}
                       </div>
@@ -444,7 +454,7 @@ export default function App() {
                         <span className="text-[9px] text-neutral-400 uppercase tracking-wider block font-bold">Adicionais:</span>
                         {item.additionals.map((add, addIdx) => (
                           <div key={addIdx}>
-                            • {add.quantity}x {add.name}
+                            • {add.quantity}x {formatAddName(add.name)}
                           </div>
                         ))}
                       </div>
@@ -728,8 +738,24 @@ export default function App() {
                         </span>
                         <span className="font-mono text-xs font-black text-neutral-200">{order.displayId}</span>
                       </div>
-                      <span className="font-mono text-[10px] text-neutral-500 flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-neutral-600" /> {order.orderTime}
+                      <span className="font-mono text-[10px] text-neutral-500 flex items-center gap-1.5 whitespace-nowrap">
+                        <Clock className="w-3 h-3 text-neutral-600" />
+                        {(() => {
+                          try {
+                            if (order.createdAt) {
+                              const d = new Date(order.createdAt);
+                              const formattedDate = d.toLocaleDateString('pt-BR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                timeZone: 'America/Sao_Paulo'
+                              });
+                              return `${formattedDate} ${order.orderTime}`;
+                            }
+                          } catch (e) {
+                            // Safe fallback
+                          }
+                          return order.orderTime;
+                        })()}
                       </span>
                     </div>
 
@@ -906,7 +932,7 @@ export default function App() {
                             {/* Compls */}
                             {item.additionals && item.additionals.length > 0 && item.additionals.map((add, addIdx) => (
                               <p key={addIdx} className="text-[9.5px] text-neutral-600 pl-3">
-                                + {add.quantity}x {add.name} (R$ {((add.price || 0) * add.quantity).toFixed(2)})
+                                + {add.quantity}x {formatAddName(add.name)} (R$ {((add.price || 0) * add.quantity).toFixed(2)})
                               </p>
                             ))}
 
@@ -1004,7 +1030,7 @@ export default function App() {
                               <p className="text-[8px] uppercase tracking-wider text-neutral-500 font-bold block mb-0.5">Adicionais:</p>
                               {item.additionals.map((add, addIdx) => (
                                 <div key={addIdx} className="font-bold">
-                                  + {add.quantity}x {add.name}
+                                  + {add.quantity}x {formatAddName(add.name)}
                                 </div>
                               ))}
                             </div>
