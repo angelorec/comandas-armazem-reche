@@ -4,11 +4,52 @@ import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { normalizeOrder } from './src/utils/normalizer';
 import { NormalizedOrder, OrderPlatform } from './src/types';
+import dotenv from 'dotenv';
+dotenv.config();
+import { createClient } from '@supabase/supabase-js';
 
 const PORT = 3000;
 const DB_FILE = process.env.VERCEL
   ? path.join('/tmp', 'orders_db.json')
   : path.join(process.cwd(), 'orders_db.json');
+
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cerlwecimducmrwlysqg.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNlcmx3ZWNpbWR1Y21yd2x5c3FnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDY0NjUsImV4cCI6MjA5NTM4MjQ2NX0.cGPqr2yDhImbhk9Q_-WLmKa9EHgST9Z9pqvGObXG5xo';
+
+// Sanitize SUPABASE_URL to prevent "Invalid path specified in request URL" errors
+let cleanSupabaseUrl = SUPABASE_URL;
+try {
+  const parsed = new URL(SUPABASE_URL);
+  cleanSupabaseUrl = parsed.origin;
+} catch (e: any) {
+  console.warn('Failed to parse SUPABASE_URL, using original:', e.message);
+}
+
+const supabase = createClient(cleanSupabaseUrl, SUPABASE_ANON_KEY);
+
+async function syncOrderToSupabase(order: NormalizedOrder) {
+  try {
+    const { error } = await supabase.from('comandas').upsert({
+      id: order.id,
+      display_id: order.displayId,
+      platform: order.platform,
+      created_at: order.createdAt,
+      delivery_type: order.deliveryType,
+      customer_name: order.customerName,
+      items: order.items,
+      total: order.total,
+      payment_method: order.paymentMethod,
+      status: order.status
+    });
+    if (error) {
+      console.warn(`[Supabase Error] Não foi possível sincronizar a comanda ${order.displayId} (tabela "comandas" pode não existir ainda):`, error.message);
+    } else {
+      console.log(`[Supabase] Comanda ${order.displayId} sincronizada com sucesso.`);
+    }
+  } catch (err: any) {
+    console.warn(`[Supabase Warning] Sincronização ignorada:`, err?.message);
+  }
+}
 
 // Realistic Mock Payloads for standard initialization
 const DEFAULT_MOCKS = [
@@ -257,6 +298,7 @@ loadDatabase();
       }
 
       saveDatabase();
+      syncOrderToSupabase(orders[idx]);
       res.json({ success: true, order: orders[idx] });
     } else {
       res.status(404).json({ error: 'Order not found' });
@@ -272,6 +314,7 @@ loadDatabase();
     if (idx !== -1) {
       orders[idx].status = status;
       saveDatabase();
+      syncOrderToSupabase(orders[idx]);
       res.json({ success: true, order: orders[idx] });
     } else {
       res.status(404).json({ error: 'Order not found' });
@@ -296,10 +339,11 @@ loadDatabase();
         displayId: `#${displayIdNum}`,
         platform: 'local',
         createdAt: new Date().toISOString(),
-        orderTime: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        orderTime: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
         deliveryType: deliveryType || 'local',
         customerName: customerName || 'Pedido Local',
         customerPhone: '',
+        customerAddress: req.body.customerAddress,
         items: items || [],
         paymentMethod: paymentMethod || 'Dinheiro',
         paymentType: 'OFFLINE',
@@ -314,6 +358,7 @@ loadDatabase();
 
       orders.unshift(newOrder);
       saveDatabase();
+      syncOrderToSupabase(newOrder);
       res.status(201).json({ success: true, order: newOrder });
     } catch (e: any) {
       res.status(400).json({ error: 'Erro ao criar pedido local', message: e?.message });
@@ -337,8 +382,10 @@ loadDatabase();
           total: total !== undefined ? total : orders[idx].total,
           subtotal: total !== undefined ? total : orders[idx].subtotal,
           status: status !== undefined ? status : orders[idx].status,
+          customerAddress: req.body.customerAddress !== undefined ? req.body.customerAddress : orders[idx].customerAddress,
         };
         saveDatabase();
+        syncOrderToSupabase(orders[idx]);
         res.json({ success: true, order: orders[idx] });
       } else {
         res.status(404).json({ error: 'Pedido não encontrado' });
@@ -355,6 +402,10 @@ loadDatabase();
     if (idx !== -1) {
       orders.splice(idx, 1);
       saveDatabase();
+      // Keep Supabase updated by deleting too
+      supabase.from('comandas').delete().eq('id', id).then(({ error }) => {
+        if (error) console.warn('Supabase delete skipping:', error.message);
+      });
       res.json({ success: true });
     } else {
       res.status(404).json({ error: 'Order not found' });
@@ -368,11 +419,322 @@ loadDatabase();
     res.json({ success: true });
   });
 
-  // API - Load Default/Mock orders again (for clean testing)
+  // API - Save all mock orders configured
   app.post('/api/orders/setup-mocks', (req, res) => {
     orders = DEFAULT_MOCKS.map(mock => normalizeOrder(mock.payload, mock.platform as OrderPlatform));
     saveDatabase();
+    // Sync all seeded mocks to Supabase too
+    orders.forEach(syncOrderToSupabase);
     res.json({ success: true, orders });
+  });
+
+  // ========== SUPABASE INTEGRATION ROUTES ==========
+
+  // GET - Retrieve menu products from Supabase
+  app.get('/api/supabase/products', async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from('produtos')
+        .select('*')
+        .order('nome', { ascending: true });
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) {
+      console.warn('Supabase products fetch failed, using fallback:', err.message);
+      // Fallback local products so it never crashes with complete menu as requested
+      res.json([
+        { id: 1001, nome: 'Marmitex', preco: 27.00 },
+        { id: 1002, nome: 'Lá Minuta tradicional', preco: 43.00 },
+        { id: 1003, nome: 'Bifes de Coxão Mole Precoce', preco: 14.00 },
+        { id: 1004, nome: 'Chuleta de Contrafilé', preco: 14.00 },
+        { id: 1005, nome: 'Filé de Frango à Parmegiana', preco: 12.00 },
+        { id: 1006, nome: 'Frango Grelhado', preco: 13.00 },
+        { id: 1007, nome: 'Bife de Lentilha', preco: 12.00 },
+        { id: 1008, nome: 'Arroz Branco', preco: 16.00 },
+        { id: 1009, nome: 'Feijão', preco: 16.00 },
+        { id: 1010, nome: 'Farofinha Caseira', preco: 10.00 },
+        { id: 1011, nome: 'Espaguete', preco: 22.00 },
+        { id: 1012, nome: 'Batata Frita', preco: 25.00 },
+        { id: 1013, nome: 'Polentinha Frita', preco: 25.00 },
+        { id: 1014, nome: 'Ovo Frito', preco: 5.00 },
+        { id: 1015, nome: 'Saladas', preco: 12.00 },
+        { id: 1016, nome: 'Porção 400g Batata Frita', preco: 20.00 },
+        { id: 1017, nome: 'Porção 400g Polentinha Frita', preco: 20.00 },
+        { id: 1018, nome: 'Pastel de Frango P', preco: 15.00 },
+        { id: 1019, nome: 'Pastel de Frango M', preco: 20.00 },
+        { id: 1020, nome: 'Pastel de Frango G', preco: 27.00 },
+        { id: 1021, nome: 'Pastel de Frango S', preco: 38.00 },
+        { id: 1022, nome: 'Pastel de Frango com Catupiry P', preco: 17.00 },
+        { id: 1023, nome: 'Pastel de Frango com Catupiry M', preco: 24.00 },
+        { id: 1024, nome: 'Pastel de Frango com Catupiry G', preco: 39.00 },
+        { id: 1025, nome: 'Pastel de Frango com Catupiry S', preco: 44.00 },
+        { id: 1026, nome: 'Pastel de Frango com Queijo P', preco: 17.00 },
+        { id: 1027, nome: 'Pastel de Frango com Queijo M', preco: 44.00 },
+        { id: 1028, nome: 'Pastel de Frango com Queijo G', preco: 31.00 },
+        { id: 1029, nome: 'Pastel de Frango com Queijo S', preco: 39.00 },
+        { id: 1030, nome: 'Pastel de Frango Palmito Queijo P', preco: 19.00 },
+        { id: 1031, nome: 'Pastel de Frango Palmito Queijo M', preco: 29.00 },
+        { id: 1032, nome: 'Pastel de Frango Palmito Queijo G', preco: 42.00 },
+        { id: 1033, nome: 'Pastel de Frango Palmito Queijo S', preco: 48.00 },
+        { id: 1034, nome: 'Pastel de Frango com Cheddar P', preco: 17.00 },
+        { id: 1035, nome: 'Pastel de Frango com Cheddar M', preco: 24.00 },
+        { id: 1036, nome: 'Pastel de Frango com Cheddar G', preco: 39.00 },
+        { id: 1037, nome: 'Pastel de Frango com Cheddar S', preco: 44.00 },
+        { id: 1038, nome: 'Pastel de Carne P', preco: 11.00 },
+        { id: 1039, nome: 'Pastel de Carne M', preco: 16.50 },
+        { id: 1040, nome: 'Pastel de Carne G', preco: 25.00 },
+        { id: 1041, nome: 'Pastel de Carne S', preco: 35.00 },
+        { id: 1042, nome: 'Pastel de Carne com Ovo P', preco: 15.00 },
+        { id: 1043, nome: 'Pastel de Carne com Ovo M', preco: 17.00 },
+        { id: 1044, nome: 'Pastel de Carne com Ovo G', preco: 29.00 },
+        { id: 1045, nome: 'Pastel de Carne com Ovo S', preco: 38.00 },
+        { id: 1046, nome: 'Pastel de Carne com Queijo P', preco: 17.00 },
+        { id: 1047, nome: 'Pastel de Carne com Queijo M', preco: 24.00 },
+        { id: 1048, nome: 'Pastel de Carne com Queijo G', preco: 31.00 },
+        { id: 1049, nome: 'Pastel de Carne com Queijo S', preco: 34.00 },
+        { id: 1050, nome: 'Pastel de Carne com Catupiry P', preco: 17.00 },
+        { id: 1051, nome: 'Pastel de Carne com Catupiry M', preco: 24.00 },
+        { id: 1052, nome: 'Pastel de Carne com Catupiry G', preco: 31.00 },
+        { id: 1053, nome: 'Pastel de Carne com Catupiry S', preco: 34.00 },
+        { id: 1054, nome: 'Pastel de Carne com Cheddar P', preco: 17.00 },
+        { id: 1055, nome: 'Pastel de Carne com Cheddar M', preco: 24.00 },
+        { id: 1056, nome: 'Pastel de Carne com Cheddar G', preco: 39.00 },
+        { id: 1057, nome: 'Pastel de Carne com Cheddar S', preco: 44.00 },
+        { id: 1058, nome: 'Pastel de Presunto e Queijo P', preco: 17.00 },
+        { id: 1059, nome: 'Pastel de Presunto e Queijo M', preco: 23.00 },
+        { id: 1060, nome: 'Pastel de Presunto e Queijo G', preco: 27.00 },
+        { id: 1061, nome: 'Pastel de Presunto e Queijo S', preco: 28.00 },
+        { id: 1062, nome: 'Pastel Presunto Queijo Ovo P', preco: 17.00 },
+        { id: 1063, nome: 'Pastel Presunto Queijo Ovo M', preco: 22.00 },
+        { id: 1064, nome: 'Pastel Presunto Queijo Ovo G', preco: 30.00 },
+        { id: 1065, nome: 'Pastel Presunto Queijo Ovo S', preco: 33.00 },
+        { id: 1066, nome: 'Pastel Presunto Queijo Tomate P', preco: 20.00 },
+        { id: 1067, nome: 'Pastel Presunto Queijo Tomate M', preco: 26.00 },
+        { id: 1068, nome: 'Pastel Presunto Queijo Tomate G', preco: 34.05 },
+        { id: 1069, nome: 'Pastel Presunto Queijo Tomate S', preco: 40.00 },
+        { id: 1070, nome: 'Pastel Chocolate Preto P', preco: 18.00 },
+        { id: 1071, nome: 'Pastel Chocolate Preto M', preco: 24.00 },
+        { id: 1072, nome: 'Pastel Chocolate Branco P', preco: 18.00 },
+        { id: 1073, nome: 'Pastel Chocolate Branco M', preco: 24.00 },
+        { id: 1074, nome: 'Pastel Chocolate Preto e Branco P', preco: 20.00 },
+        { id: 1075, nome: 'Pastel Chocolate Preto e Branco M', preco: 26.00 },
+        { id: 1076, nome: 'Pastel Chocolate Preto e Morango P', preco: 20.00 },
+        { id: 1077, nome: 'Pastel Chocolate Preto e Morango M', preco: 26.00 },
+        { id: 1078, nome: 'Pastel Chocolate Branco e Morango P', preco: 20.00 },
+        { id: 1079, nome: 'Pastel Chocolate Branco e Morango M', preco: 26.00 },
+        { id: 1080, nome: 'Pastel Chocolate Preto Branco Morango P', preco: 24.00 },
+        { id: 1081, nome: 'Pastel Chocolate Preto Branco Morango M', preco: 28.00 },
+        { id: 1082, nome: 'Pastel Costela P', preco: 20.00 },
+        { id: 1083, nome: 'Pastel Costela M', preco: 29.00 },
+        { id: 1084, nome: 'Pastel Costela G', preco: 39.00 },
+        { id: 1085, nome: 'Pastel Costela S', preco: 44.00 },
+        { id: 1086, nome: 'Pastel Costela com Queijo P', preco: 24.00 },
+        { id: 1087, nome: 'Pastel Costela com Queijo M', preco: 29.00 },
+        { id: 1088, nome: 'Pastel Costela com Queijo G', preco: 39.00 },
+        { id: 1089, nome: 'Pastel Costela com Queijo S', preco: 44.00 },
+        { id: 1090, nome: 'Pastel Calabresa com Queijo P', preco: 17.00 },
+        { id: 1091, nome: 'Pastel Calabresa com Queijo M', preco: 22.00 },
+        { id: 1092, nome: 'Pastel Calabresa com Queijo G', preco: 33.00 },
+        { id: 1093, nome: 'Pastel Calabresa com Queijo S', preco: 39.00 },
+        { id: 1094, nome: 'Pastel Calabresa Queijo Ovo P', preco: 20.00 },
+        { id: 1095, nome: 'Pastel Calabresa Queijo Ovo M', preco: 26.00 },
+        { id: 1096, nome: 'Pastel Calabresa Queijo Ovo G', preco: 37.00 },
+        { id: 1097, nome: 'Pastel Calabresa Queijo Ovo S', preco: 42.00 },
+        { id: 1098, nome: 'Pastel Vegetariano Queijo P', preco: 17.00 },
+        { id: 1099, nome: 'Pastel Vegetariano Queijo M', preco: 22.00 },
+        { id: 1100, nome: 'Pastel Vegetariano Queijo G', preco: 29.00 },
+        { id: 1101, nome: 'Pastel Vegetariano Queijo S', preco: 37.00 },
+        { id: 1102, nome: 'Pastel Vegetariano Queijo Ovo Brócolis P', preco: 22.00 },
+        { id: 1103, nome: 'Pastel Vegetariano Queijo Ovo Brócolis M', preco: 28.00 },
+        { id: 1104, nome: 'Pastel Vegetariano Queijo Ovo Brócolis G', preco: 34.00 },
+        { id: 1105, nome: 'Pastel Vegetariano Queijo Ovo Brócolis S', preco: 40.00 },
+        { id: 1106, nome: 'Cheese Burguer', preco: 24.00 },
+        { id: 1107, nome: 'Cheese Salada', preco: 26.00 },
+        { id: 1108, nome: 'Cheese Egg', preco: 28.00 },
+        { id: 1109, nome: 'Cheese Bacon', preco: 30.00 },
+        { id: 1110, nome: 'Cheese Calabresa', preco: 30.00 },
+        { id: 1111, nome: 'Cheese Frango', preco: 28.00 },
+        { id: 1112, nome: 'Cheese Armazém', preco: 49.00 },
+        { id: 1113, nome: 'X Vegetariano', preco: 28.00 },
+        { id: 1114, nome: 'X Egg Vegetariano', preco: 27.00 },
+        { id: 1115, nome: 'Misto Presunto Queijo', preco: 8.00 },
+        { id: 1116, nome: 'Misto Presunto Queijo Tomate', preco: 15.00 },
+        { id: 1117, nome: 'Misto Presunto Queijo Tomate Ovo', preco: 20.00 },
+        { id: 1118, nome: 'Misto Salame Queijo', preco: 10.00 },
+        { id: 1119, nome: 'Misto Salame Queijo Tomate', preco: 16.00 },
+        { id: 1120, nome: 'Misto Salame Queijo Tomate Ovo', preco: 22.00 },
+        { id: 1121, nome: 'Água sem Gás Puris', preco: 3.00 },
+        { id: 1122, nome: 'Água com Gás Puris', preco: 3.00 },
+        { id: 1123, nome: 'Coca-Cola Lata', preco: 6.00 },
+        { id: 1124, nome: 'Coca-Cola Zero Lata', preco: 6.00 },
+        { id: 1125, nome: 'Coca-Cola 2 Litros', preco: 17.00 },
+        { id: 1126, nome: 'Coca-Cola Zero 2 Litros', preco: 17.00 },
+        { id: 1127, nome: 'Laranjinha 2 Litros', preco: 15.00 },
+        { id: 1128, nome: 'Pureza Guaraná 2 Litros', preco: 15.00 },
+        { id: 1129, nome: 'Budweiser 330ml', preco: 10.00 },
+        { id: 1130, nome: 'Heineken 330ml', preco: 10.00 },
+        { id: 1131, nome: 'Suco de Laranja 500ml', preco: 12.00 },
+        { id: 1132, nome: 'Suco de Limão 500ml', preco: 12.00 },
+        { id: 1133, nome: 'Suco de Maracujá 500ml', preco: 14.00 },
+        { id: 1134, nome: 'Coca-Cola 600ml', preco: 12.00 },
+        { id: 1135, nome: 'Laranjinha 600ml', preco: 12.00 },
+        { id: 1136, nome: 'Pureza Guaraná 600ml', preco: 12.00 },
+        { id: 1137, nome: 'Suco Integral de Uva', preco: 10.00 },
+        { id: 1138, nome: 'Pureza 1 Litro', preco: 15.00 },
+        { id: 1139, nome: 'Laranjinha 1 Litro', preco: 15.00 },
+        { id: 1140, nome: 'Croquete', preco: 8.00 },
+        { id: 1141, nome: 'Salsicha Simples', preco: 6.00 },
+        { id: 1142, nome: 'Salsicha com Catupiry e Queijo', preco: 8.00 },
+        { id: 1143, nome: 'Salsicha Empanada', preco: 9.00 },
+        { id: 1144, nome: 'Empada de Frango', preco: 9.00 },
+        { id: 1145, nome: 'Assado de Carne', preco: 10.00 },
+        { id: 1146, nome: 'Assado de Frango', preco: 10.00 },
+        { id: 1147, nome: 'Assado de Presunto e Queijo', preco: 10.00 },
+        { id: 1148, nome: 'Risoles de Frango', preco: 9.00 },
+        { id: 1149, nome: 'Coxinha de Frango com Catupiry', preco: 9.00 },
+        { id: 1150, nome: 'Bolinho de Carne', preco: 12.00 },
+        { id: 1151, nome: 'Mini Pastel de Carne', preco: 3.00 },
+        { id: 1152, nome: 'Pão de Queijo', preco: 4.00 },
+        { id: 1153, nome: 'Prestígio Preto', preco: 2.50 },
+        { id: 1154, nome: 'Prestígio Branco', preco: 2.50 },
+        { id: 1155, nome: 'Bis Extra', preco: 3.50 },
+        { id: 1156, nome: 'Bis Oreo', preco: 3.50 },
+        { id: 1157, nome: 'Lacta Branco', preco: 3.50 },
+        { id: 1158, nome: 'Lacta ao Leite', preco: 3.50 },
+        { id: 1159, nome: 'Diamante Negro', preco: 3.50 },
+        { id: 1160, nome: 'Lacta Shot', preco: 3.50 },
+        { id: 1161, nome: 'Trento Avelã', preco: 2.50 },
+        { id: 1162, nome: 'Trento Chocolate', preco: 2.50 },
+        { id: 1163, nome: 'Trento Dark 55%', preco: 2.50 },
+        { id: 1164, nome: 'Trento Branco Dark', preco: 2.50 },
+        { id: 1165, nome: 'Trento Alegro Preto', preco: 3.50 },
+        { id: 1166, nome: 'Trento Alegro Branco', preco: 3.50 },
+        { id: 1167, nome: 'Sonho de Valsa', preco: 2.00 },
+        { id: 1168, nome: 'Ouro Branco', preco: 2.00 },
+        { id: 1169, nome: 'Pé de Moça', preco: 3.00 },
+        { id: 1170, nome: 'Paçoquinha Tradicional', preco: 1.00 },
+        { id: 1171, nome: 'Gibi', preco: 1.00 },
+        { id: 1172, nome: 'Geléia de Frutas', preco: 1.00 },
+        { id: 1173, nome: 'Halls Extra Forte', preco: 2.50 },
+        { id: 1174, nome: 'Halls Menta', preco: 2.50 },
+        { id: 1175, nome: 'Halls Cereja', preco: 2.50 },
+        { id: 1176, nome: 'Halls Morango', preco: 2.50 },
+        { id: 1177, nome: 'Halls Uva Verde', preco: 2.50 },
+        { id: 1178, nome: 'Trident Hortelã', preco: 2.50 },
+        { id: 1179, nome: 'Trident Menta', preco: 2.50 },
+        { id: 1180, nome: 'Trident Melancia', preco: 2.50 },
+        { id: 1181, nome: 'Trident Tutti Frutti', preco: 2.50 },
+        { id: 1182, nome: 'Trident Morango', preco: 2.50 },
+        { id: 1183, nome: 'Trident Canela', preco: 2.50 }
+      ]);
+    }
+  });
+
+  // GET - Retrieve additionals from Supabase
+  app.get('/api/supabase/additionals', async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from('adicionais')
+        .select('*')
+        .order('nome', { ascending: true });
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) {
+      console.warn('Supabase additionals fetch failed, using fallback:', err.message);
+      res.json([
+        { id: 2001, nome: 'Bife de Coxão Mole (Marmitex/Lá Minuta)', preco: 0.00 },
+        { id: 2002, nome: 'Frango à Parmegiana (Marmitex/Lá Minuta)', preco: 0.00 },
+        { id: 2003, nome: 'Chuleta de Contrafilé (Marmitex/Lá Minuta)', preco: 3.00 },
+        { id: 2004, nome: 'Bife de Lentilha à Parmegiana (Marmitex/Lá Minuta)', preco: 2.00 },
+        { id: 2005, nome: 'Bife de Coxão Mole Acebolado (Marmitex/Lá Minuta)', preco: 3.00 },
+        { id: 2006, nome: 'Chuleta de Contrafilé Acebolada (Marmitex/Lá Minuta)', preco: 5.00 },
+        { id: 2007, nome: 'Bife de Lentilha (Vegetariano) (Marmitex/Lá Minuta)', preco: 0.00 },
+        { id: 2008, nome: 'Filé de Frango Grelhado (Marmitex/Lá Minuta)', preco: 0.00 },
+        { id: 2009, nome: 'Adicional Bife de Coxão Mole Precoce', preco: 14.00 },
+        { id: 2010, nome: 'Adicional Filé de Frango à Parmegiana', preco: 14.00 },
+        { id: 2011, nome: 'Adicional Chuleta de Contrafilé', preco: 16.00 },
+        { id: 2012, nome: 'Adicional Bife de Coxão Mole Acebolado', preco: 17.00 },
+        { id: 2013, nome: 'Adicional Chuleta de Contrafilé Acebolada', preco: 17.00 },
+        { id: 2014, nome: 'Adicional Bife de Lentilha à Parmegiana', preco: 14.00 },
+        { id: 2015, nome: 'Adicional Filé de Frango Grelhado', preco: 14.00 },
+        { id: 2016, nome: 'Adicional Ovo Frito', preco: 5.00 },
+        { id: 2017, nome: 'Talheres Descartáveis', preco: 0.00 },
+        { id: 2018, nome: 'Bolo de Prestígio Caseiro', preco: 12.00 },
+        { id: 2019, nome: 'Bolo Dois Amores', preco: 12.00 },
+        { id: 2020, nome: 'Pudim Caseiro', preco: 13.00 },
+        { id: 2021, nome: 'Paçoquinha', preco: 1.50 },
+        { id: 2022, nome: 'Geleia (Sinaleira de Monza)', preco: 1.50 },
+        { id: 2023, nome: 'Pé de Moça', preco: 3.50 },
+        { id: 2024, nome: 'Gibi', preco: 1.50 },
+        { id: 2025, nome: 'Pastel: Queijo', preco: 6.00 },
+        { id: 2026, nome: 'Pastel: Palmito', preco: 6.00 },
+        { id: 2027, nome: 'Pastel: Ovo', preco: 7.00 },
+        { id: 2028, nome: 'Pastel: Milho', preco: 5.00 },
+        { id: 2029, nome: 'Pastel: Ervilha', preco: 5.00 },
+        { id: 2030, nome: 'Pastel: Cheddar', preco: 7.00 },
+        { id: 2031, nome: 'Pastel: Catupiry', preco: 7.00 },
+        { id: 2032, nome: 'Pastel: Calabresa', preco: 7.00 },
+        { id: 2033, nome: 'Pastel: Brócolis', preco: 6.00 },
+        { id: 2034, nome: 'Pastel: Bacon', preco: 7.00 },
+        { id: 2035, nome: 'Pastel: Azeitona', preco: 5.00 },
+        { id: 2036, nome: 'Pastel: Tomate', preco: 5.00 }
+      ]);
+    }
+  });
+
+  // GET - Fetch comanda history (backed by Supabase, with automatic client-side / local in-memory fallbacks)
+  app.get('/api/supabase/comandas', async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from('comandas')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      res.json({
+        fallback: false,
+        data: data || []
+      });
+    } catch (err: any) {
+      console.warn('Note: Using local memory list for comanda history fallback:', err?.message);
+      res.json({
+        fallback: true,
+        data: orders.map(o => ({
+          id: o.id,
+          display_id: o.displayId,
+          platform: o.platform,
+          created_at: o.createdAt,
+          delivery_type: o.deliveryType,
+          customer_name: o.customerName,
+          items: o.items,
+          total: o.total,
+          payment_method: o.paymentMethod,
+          status: o.status
+        }))
+      });
+    }
+  });
+
+  // POST - Explicitly save a comanda to comanda history manually
+  app.post('/api/supabase/comandas', async (req, res) => {
+    try {
+      const order = req.body;
+      const { error } = await supabase.from('comandas').upsert({
+        id: order.id,
+        display_id: order.displayId || order.display_id,
+        platform: order.platform,
+        created_at: order.createdAt || order.created_at || new Date().toISOString(),
+        delivery_type: order.deliveryType || order.delivery_type,
+        customer_name: order.customerName || order.customer_name,
+        items: order.items,
+        total: order.total,
+        payment_method: order.paymentMethod || order.payment_method || 'PIX',
+        status: order.status || 'pending'
+      });
+      if (error) throw error;
+      res.status(201).json({ success: true });
+    } catch (err: any) {
+      res.status(400).json({ error: 'Erro ao salvar histórico', message: err?.message });
+    }
   });
 
   // API Webhook Interfaces for iFood, Anota.ai, and Delivery Much

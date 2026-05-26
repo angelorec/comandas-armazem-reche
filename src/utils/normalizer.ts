@@ -12,7 +12,7 @@ export function normalizeIFoodOrder(payload: any): NormalizedOrder {
   let orderTime = '00:00';
   try {
     const d = new Date(createdAt);
-    orderTime = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    orderTime = d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
   } catch (e) {
     // fallback
   }
@@ -112,7 +112,7 @@ export function normalizeAnotaAiOrder(payload: any): NormalizedOrder {
   let orderTime = '00:00';
   try {
     const d = new Date(createdAt);
-    orderTime = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    orderTime = d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
   } catch (e) {
     // fallback
   }
@@ -223,7 +223,7 @@ export function normalizeDeliveryMuchOrder(payload: any): NormalizedOrder {
   let orderTime = '00:00';
   try {
     const d = new Date(createdAt);
-    orderTime = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    orderTime = d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
   } catch (e) {
     // fallback
   }

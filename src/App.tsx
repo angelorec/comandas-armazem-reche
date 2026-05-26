@@ -11,6 +11,7 @@ import DashboardStats from './components/DashboardStats';
 import OrderSimulator from './components/OrderSimulator';
 import CommandLogo from './components/CommandLogo';
 import LocalOrderModal from './components/LocalOrderModal';
+import ComandaHistoryModal from './components/ComandaHistoryModal';
 
 export default function App() {
   const [orders, setOrders] = useState<NormalizedOrder[]>([]);
@@ -25,6 +26,19 @@ export default function App() {
   // Local/Manual order creation & editing state
   const [isLocalModalOpen, setIsLocalModalOpen] = useState(false);
   const [orderToEdit, setOrderToEdit] = useState<NormalizedOrder | null>(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
+  const handleSelectOrderFromHistory = (order: NormalizedOrder) => {
+    setOrders(prev => {
+      const exists = prev.some(o => o.id === order.id);
+      if (exists) {
+        return prev;
+      }
+      return [order, ...prev];
+    });
+    setSelectedOrderId(order.id);
+    setIsHistoryOpen(false);
+  };
   
   // Custom Print stimulation states
   const [printSimulationRunning, setPrintSimulationRunning] = useState(false);
@@ -41,6 +55,11 @@ export default function App() {
     try {
       const res = await fetch('/api/orders');
       if (res.ok) {
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          throw new Error('Retornou uma resposta não-JSON (por exemplo, HTML ou texto puro). O servidor pode estar reiniciando.');
+        }
+        
         const data: NormalizedOrder[] = await res.json();
         setOrders(data);
         
@@ -54,9 +73,11 @@ export default function App() {
         } else {
           setSelectedOrderId(null);
         }
+      } else {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
     } catch (err) {
-      console.error('Error fetching orders:', err);
+      console.warn('Silent skipping of error fetching orders (e.g. server booting up):', err);
     } finally {
       if (!silent) {
         // Subtle fake timeout delay for delightful UI feedback
@@ -484,7 +505,7 @@ export default function App() {
       </header>
 
       {/* Prominent High-Visibility Quick-Launcher for Waiters (Mobile only) */}
-      <div className="block lg:hidden p-3.5 bg-neutral-950/80 border-b border-neutral-850/70 backdrop-blur sticky top-[68px] z-40">
+      <div className="block lg:hidden p-3.5 bg-neutral-950/80 border-b border-neutral-850/70 backdrop-blur sticky top-[68px] z-40 space-y-2">
         <button
           id="btn-create-local-order-mobile"
           type="button"
@@ -493,6 +514,15 @@ export default function App() {
         >
           <PlusCircle className="w-5 h-5 text-neutral-950 stroke-[2.5]" />
           LANÇAR NOVO PEDIDO EM LOCO
+        </button>
+        <button
+          id="btn-open-history-mobile"
+          type="button"
+          onClick={() => setIsHistoryOpen(true)}
+          className="w-full bg-neutral-900 border border-neutral-800 text-yellow-500 hover:text-yellow-400 font-extrabold py-3 px-4 rounded-xl text-xs tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-[0.98]"
+        >
+          <Calendar className="w-4 h-4 text-yellow-500" />
+          HISTÓRICO DE COMANDAS (SUPABASE)
         </button>
       </div>
 
@@ -548,7 +578,7 @@ export default function App() {
           {/* Header Controls for Queue search & filters */}
           <div className="p-3 border-b border-neutral-800 bg-neutral-900/50 space-y-2.5">
             {/* Highly clickable and visible local order wizard launch button */}
-            <div className="pt-1">
+            <div className="pt-1 flex flex-col gap-2">
               <button
                 id="btn-create-local-order"
                 type="button"
@@ -557,6 +587,15 @@ export default function App() {
               >
                 <PlusCircle className="w-4 h-4 text-neutral-950 stroke-[2.5]" />
                 LANÇAR NOVO PEDIDO EM LOCO
+              </button>
+              <button
+                id="btn-open-history"
+                type="button"
+                onClick={() => setIsHistoryOpen(true)}
+                className="w-full bg-neutral-950 hover:bg-neutral-850 hover:text-white text-yellow-500 font-extrabold py-2 px-3 rounded-xl text-[11px] flex items-center justify-center gap-1.5 cursor-pointer border border-neutral-800 transition active:scale-[0.98]"
+              >
+                <Calendar className="w-3.5 h-3.5 text-yellow-500" />
+                HISTÓRICO GERENCIA DE COMANDAS
               </button>
             </div>
 
@@ -1183,6 +1222,12 @@ export default function App() {
         }}
         onSave={handleSaveLocalOrder}
         orderToEdit={orderToEdit}
+      />
+
+      <ComandaHistoryModal
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onSelectOrderForReprint={handleSelectOrderFromHistory}
       />
     </div>
   );

@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { NormalizedOrder, NormalizedOrderItem } from '../types';
-import { X, Plus, Trash2, ShoppingBag, Edit3, User, Coffee } from 'lucide-react';
+import { NormalizedOrder, NormalizedOrderItem, NormalizedOrderItemAdditional } from '../types';
+import { X, Plus, Trash2, ShoppingBag, Edit3, User, Coffee, MapPin, Phone } from 'lucide-react';
+
+// Helper function to remove accents/diacritics and convert to lower case
+function removeAccents(str: string): string {
+  if (!str) return '';
+  return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
 
 interface LocalOrderModalProps {
   isOpen: boolean;
@@ -11,40 +17,130 @@ interface LocalOrderModalProps {
 
 export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }: LocalOrderModalProps) {
   const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryType, setDeliveryType] = useState<'delivery' | 'retirada' | 'local'>('local');
-  const [paymentMethod, setPaymentMethod] = useState('Dinheiro');
   
+  // Supabase items fetched cached
+  const [dbProducts, setDbProducts] = useState<{ id: any; nome: string; preco: number }[]>([]);
+  const [dbAdditionals, setDbAdditionals] = useState<{ id: any; nome: string; preco: number }[]>([]);
+  const [loadingDb, setLoadingDb] = useState(false);
+
+  // Address fields
+  const [addressStreet, setAddressStreet] = useState('');
+  const [addressNumber, setAddressNumber] = useState('');
+  const [addressNeighborhood, setAddressNeighborhood] = useState('');
+  const [addressComplement, setAddressComplement] = useState('');
+  const [addressCity, setAddressCity] = useState('Pelotas');
+
   // Items in active creation form
   const [items, setItems] = useState<NormalizedOrderItem[]>([]);
   
-  // Field for currently entering item
+  // Fields for currently entering item
+  const [selectedProductId, setSelectedProductId] = useState<string | number>('');
   const [itemName, setItemName] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [customPrice, setCustomPrice] = useState('');
   const [itemQty, setItemQty] = useState(1);
   const [itemObs, setItemObs] = useState('');
+  const [selectedAdditionals, setSelectedAdditionals] = useState<Record<string | number, boolean>>({});
 
   // Editing existing item index
   const [editingItemIdx, setEditingItemIdx] = useState<number | null>(null);
+  const [activeCategory, setActiveCategory] = useState<'suggerito' | 'pastel' | 'pratos' | 'doces' | 'todos'>('suggerito');
+
+  // Fetch Supabase products & additionals on open
+  useEffect(() => {
+    if (isOpen) {
+      setLoadingDb(true);
+      Promise.all([
+        fetch('/api/supabase/products').then(res => {
+          const contentType = res.headers.get('content-type');
+          if (res.ok && contentType && contentType.includes('application/json')) {
+            return res.json();
+          }
+          throw new Error('Fallback para produtos locais.');
+        }),
+        fetch('/api/supabase/additionals').then(res => {
+          const contentType = res.headers.get('content-type');
+          if (res.ok && contentType && contentType.includes('application/json')) {
+            return res.json();
+          }
+          throw new Error('Fallback para adicionais locais.');
+        })
+      ])
+        .then(([prods, adds]) => {
+          setDbProducts(prods || []);
+          setDbAdditionals(adds || []);
+        })
+        .catch(err => {
+          console.warn('Usando base local devido a falha de rede/API do Supabase (esperado durante inicialização):', err);
+          // Preencher com fallbacks locais basicos caso dê erro de parse (ex. html) ou erro de API
+          setDbProducts([
+            { id: 1001, nome: 'Marmitex', preco: 27.00 },
+            { id: 1002, nome: 'Lá Minuta tradicional', preco: 43.00 },
+            { id: 1012, nome: 'Batata Frita', preco: 25.00 },
+            { id: 1018, nome: 'Pastel de Frango P', preco: 15.00 },
+            { id: 1038, nome: 'Pastel de Carne P', preco: 11.00 },
+            { id: 1123, nome: 'Coca-Cola Lata', preco: 6.00 }
+          ]);
+          setDbAdditionals([
+            { id: 2001, nome: 'Bife de Coxão Mole (Marmitex/Lá Minuta)', preco: 0.00 },
+            { id: 2003, nome: 'Chuleta de Contrafilé (Marmitex/Lá Minuta)', preco: 3.00 },
+            { id: 2025, nome: 'Pastel: Queijo', preco: 6.00 },
+            { id: 2030, nome: 'Pastel: Cheddar', preco: 7.00 },
+            { id: 2034, nome: 'Pastel: Bacon', preco: 7.00 }
+          ]);
+        })
+        .finally(() => {
+          setLoadingDb(false);
+        });
+    }
+  }, [isOpen]);
 
   // Initialize form when modal opens or order changes
   useEffect(() => {
     if (isOpen) {
       if (orderToEdit) {
         setCustomerName(orderToEdit.customerName);
+        setCustomerPhone(orderToEdit.customerPhone || '');
         setDeliveryType(orderToEdit.deliveryType);
-        setPaymentMethod(orderToEdit.paymentMethod || 'Dinheiro');
         setItems([...orderToEdit.items]);
+        
+        // Handle address restoration
+        if (orderToEdit.customerAddress) {
+          setAddressStreet(orderToEdit.customerAddress.street || '');
+          setAddressNumber(orderToEdit.customerAddress.number || '');
+          setAddressNeighborhood(orderToEdit.customerAddress.neighborhood || '');
+          setAddressComplement(orderToEdit.customerAddress.complement || '');
+          setAddressCity(orderToEdit.customerAddress.city || 'Pelotas');
+        } else {
+          setAddressStreet('');
+          setAddressNumber('');
+          setAddressNeighborhood('');
+          setAddressComplement('');
+          setAddressCity('Pelotas');
+        }
       } else {
         // Clear form for creation
         setCustomerName('');
+        setCustomerPhone('');
         setDeliveryType('local');
-        setPaymentMethod('Dinheiro');
         setItems([]);
+        setAddressStreet('');
+        setAddressNumber('');
+        setAddressNeighborhood('');
+        setAddressComplement('');
+        setAddressCity('Pelotas');
       }
       // Reset input fields
       setItemName('');
       setItemQty(1);
       setItemObs('');
+      setSelectedProductId('');
+      setSelectedAdditionals({});
       setEditingItemIdx(null);
+      setShowSuggestions(false);
+      setCustomPrice('');
     }
   }, [isOpen, orderToEdit]);
 
@@ -53,11 +149,37 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
   const handleAddOrUpdateItem = () => {
     if (!itemName.trim()) return;
 
+    // Resolve base price
+    let basePrice = 0;
+    if (selectedProductId && selectedProductId !== 'custom') {
+      const matched = dbProducts.find(p => p.id.toString() === selectedProductId.toString());
+      if (matched) basePrice = Number(matched.preco) || 0;
+    } else {
+      // Custom price parsed
+      basePrice = parseFloat(customPrice) || 0;
+    }
+
+    // Resolve additionals selected
+    const additionalList: NormalizedOrderItemAdditional[] = [];
+    Object.entries(selectedAdditionals).forEach(([id, checked]) => {
+      if (checked) {
+        const matchedAdd = dbAdditionals.find(a => a.id.toString() === id.toString());
+        if (matchedAdd) {
+          additionalList.push({
+            name: matchedAdd.nome,
+            quantity: 1,
+            price: Number(matchedAdd.preco) || 0
+          });
+        }
+      }
+    });
+
     const newItem: NormalizedOrderItem = {
       name: itemName.trim(),
       quantity: itemQty,
-      price: 0, // kitchen simplified uses price-less structure for floor orders
-      observations: itemObs.trim()
+      price: basePrice,
+      observations: itemObs.trim(),
+      additionals: additionalList.length > 0 ? additionalList : undefined
     };
 
     if (editingItemIdx !== null) {
@@ -75,6 +197,10 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
     setItemName('');
     setItemQty(1);
     setItemObs('');
+    setSelectedProductId('');
+    setSelectedAdditionals({});
+    setShowSuggestions(false);
+    setCustomPrice('');
   };
 
   const handleEditItem = (idx: number) => {
@@ -82,7 +208,30 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
     setItemName(item.name);
     setItemQty(item.quantity);
     setItemObs(item.observations || '');
+    
+    // Auto detect product match from menu list
+    const match = dbProducts.find(p => p.nome.toLowerCase() === item.name.toLowerCase());
+    if (match) {
+      setSelectedProductId(match.id);
+      setCustomPrice('');
+    } else {
+      setSelectedProductId('custom');
+      setCustomPrice(item.price ? item.price.toString() : '');
+    }
+
+    // Capture additionals mappings
+    const addMap: Record<string | number, boolean> = {};
+    if (item.additionals) {
+      item.additionals.forEach(add => {
+        const matchedAdd = dbAdditionals.find(a => a.nome.toLowerCase() === add.name.toLowerCase());
+        if (matchedAdd) {
+          addMap[matchedAdd.id] = true;
+        }
+      });
+    }
+    setSelectedAdditionals(addMap);
     setEditingItemIdx(idx);
+    setShowSuggestions(false);
   };
 
   const handleRemoveItem = (idx: number) => {
@@ -92,6 +241,10 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
       setItemName('');
       setItemQty(1);
       setItemObs('');
+      setSelectedProductId('');
+      setSelectedAdditionals({});
+      setShowSuggestions(false);
+      setCustomPrice('');
     }
   };
 
@@ -106,15 +259,39 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
       return;
     }
 
-    // Calculate simulated subtotal/total
-    const simulatedTotal = items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0);
+    // Address verification if delivery is selected
+    let customerAddressObj = undefined;
+    if (deliveryType === 'delivery') {
+      if (!addressStreet.trim() || !addressNumber.trim() || !addressNeighborhood.trim()) {
+        alert('Por favor, informe o endereço de entrega completo (Rua, Número e Bairro).');
+        return;
+      }
+      customerAddressObj = {
+        street: addressStreet.trim(),
+        number: addressNumber.trim(),
+        neighborhood: addressNeighborhood.trim(),
+        complement: addressComplement.trim(),
+        city: addressCity.trim(),
+        formatted: `${addressStreet.trim()}, ${addressNumber.trim()} - ${addressNeighborhood.trim()}, ${addressCity.trim()}`
+      };
+    }
+
+    // Calculate sum of active order products and additionals
+    const simulatedTotal = items.reduce((sum, item) => {
+      const priceBase = item.price || 0;
+      const priceAdds = item.additionals?.reduce((s, a) => s + (a.price || 0) * a.quantity, 0) || 0;
+      return sum + (priceBase + priceAdds) * item.quantity;
+    }, 0);
 
     const data: Partial<NormalizedOrder> = {
       customerName: customerName.trim(),
+      customerPhone: customerPhone.trim(),
       deliveryType,
       items,
-      paymentMethod,
-      total: simulatedTotal
+      paymentMethod: orderToEdit?.paymentMethod || 'A Definir', // Retires payment picker but satisfies data model
+      total: simulatedTotal,
+      subtotal: simulatedTotal,
+      customerAddress: customerAddressObj
     };
 
     await onSave(data);
@@ -122,18 +299,19 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/80 backdrop-blur-sm animate-fade-in">
-      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-neutral-950/80 backdrop-blur-sm animate-fade-in">
+      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-2xl h-[95vh] sm:h-auto max-h-[96vh] sm:max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
         
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800 bg-neutral-950/40">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-neutral-800 bg-neutral-950/40">
           <div className="flex items-center gap-2">
             <Coffee className="w-5 h-5 text-yellow-400" />
-            <h3 className="text-base font-bold text-neutral-100 uppercase tracking-wider">
+            <h3 className="text-sm sm:text-base font-bold text-neutral-100 uppercase tracking-wider">
               {orderToEdit ? 'Editar Comanda/Pedido' : 'Novo Pedido em Loco / Manual'}
             </h3>
           </div>
           <button 
+            type="button"
             onClick={onClose}
             className="p-1.5 text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 rounded-lg transition"
           >
@@ -142,15 +320,15 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
         </div>
 
         {/* Scrollable Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
           
           {/* Main Info Fields */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-12 gap-4">
             
             {/* Customer name */}
-            <div className="space-y-1.5 col-span-1 md:col-span-2">
+            <div className="space-y-1.5 col-span-12 md:col-span-7">
               <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-yellow-500" /> Nome do Cliente *
+                <User className="w-3.5 h-3.5 text-yellow-500" /> Nome do Cliente / Mesa *
               </label>
               <input
                 type="text"
@@ -162,8 +340,23 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
               />
             </div>
 
+            {/* Customer Phone */}
+            <div className="space-y-1.5 col-span-12 md:col-span-5">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                <Phone className="w-3.5 h-3.5 text-yellow-500" /> Telefone / WhatsApp do Cliente
+              </label>
+              <input
+                type="text"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                placeholder="Ex: (53) 99123-4567"
+                required={deliveryType === 'delivery'}
+                className="w-full bg-neutral-950 border border-neutral-800 focus:border-yellow-400/40 rounded-xl px-3 py-2.5 text-xs text-neutral-200 outline-none transition focus:ring-1 focus:ring-yellow-400/20"
+              />
+            </div>
+
             {/* Delivery type selection */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 col-span-12">
               <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
                 Tipo do Pedido
               </label>
@@ -173,7 +366,7 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
                     key={type}
                     type="button"
                     onClick={() => setDeliveryType(type)}
-                    className={`py-2 text-[10.5px] font-bold rounded-xl transition border cursor-pointer ${
+                    className={`py-2.5 text-[11px] font-bold rounded-xl transition border cursor-pointer ${
                       deliveryType === type
                         ? 'bg-yellow-400 text-neutral-950 border-yellow-500 font-extrabold shadow-sm'
                         : 'bg-neutral-950 text-neutral-400 border-neutral-850 hover:bg-neutral-900'
@@ -185,55 +378,198 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
               </div>
               <p className="text-[10px] text-neutral-500 mt-1">
                 {deliveryType === 'local' 
-                  ? '💡 Comandas em Loco imprimem apenas a via de cozinha (Kitchen).'
-                  : 'Gera comanda de expedição completa com totais.'}
+                  ? '💡 Comandas em Loco imprimem apenas a via de cozinha (Kitchen) sem preços.'
+                  : 'Gera comanda de expedição completa com rota de entrega.'}
               </p>
             </div>
 
-            {/* Payment Method */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-                Método de Pagamento
-              </label>
-              <select
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-                className="w-full bg-neutral-950 border border-neutral-800 focus:border-yellow-400/40 rounded-xl px-3 py-2.5 text-xs text-neutral-200 outline-none transition focus:ring-1 focus:ring-yellow-400/20 select-none appearance-none"
-              >
-                <option value="Dinheiro">Dinheiro</option>
-                <option value="PIX">PIX</option>
-                <option value="Cartão de Crédito">Cartão de Crédito</option>
-                <option value="Cartão de Débito">Cartão de Débito</option>
-                <option value="A Definir">A Definir / Pago</option>
-              </select>
-            </div>
+          </div>
 
+          {/* Locked/Unlocked Address Subsection depending on Delivery selection */}
+          <div className={`p-4 rounded-xl border transition-all duration-300 ${
+            deliveryType === 'delivery' 
+              ? 'bg-neutral-950/40 border-yellow-550/20 shadow-lg shadow-yellow-400/5' 
+              : 'bg-neutral-950/10 border-neutral-850/55 opacity-50'
+          }`}>
+            <h4 className="text-[11px] font-bold text-neutral-300 uppercase tracking-wider mb-3 flex items-center gap-1.5 select-none">
+              <MapPin className="w-3.5 h-3.5 text-yellow-500" /> Endereço de Entrega (Delivery)
+              {deliveryType !== 'delivery' && (
+                <span className="text-[9px] text-yellow-500/80 font-bold ml-1">
+                  (Bloqueado - Selecione Delivery para liberar)
+                </span>
+              )}
+            </h4>
+            
+            <div className="grid grid-cols-12 gap-3.5">
+              <div className="col-span-12 sm:col-span-8 space-y-1">
+                <label className="text-[9px] font-bold uppercase text-neutral-400">Rua *</label>
+                <input
+                  type="text"
+                  value={addressStreet}
+                  onChange={(e) => setAddressStreet(e.target.value)}
+                  placeholder="Ex: Avenida Bento Gonçalves"
+                  disabled={deliveryType !== 'delivery'}
+                  required={deliveryType === 'delivery'}
+                  className="w-full bg-neutral-900 border border-neutral-800 focus:border-yellow-450/40 disabled:opacity-40 disabled:bg-neutral-950/20 rounded-lg p-2 text-xs text-neutral-200 outline-none transition"
+                />
+              </div>
+
+              <div className="col-span-12 sm:col-span-4 space-y-1">
+                <label className="text-[9px] font-bold uppercase text-neutral-400">Número *</label>
+                <input
+                  type="text"
+                  value={addressNumber}
+                  onChange={(e) => setAddressNumber(e.target.value)}
+                  placeholder="Ex: 4500"
+                  disabled={deliveryType !== 'delivery'}
+                  required={deliveryType === 'delivery'}
+                  className="w-full bg-neutral-900 border border-neutral-800 focus:border-yellow-450/40 disabled:opacity-40 disabled:bg-neutral-950/20 rounded-lg p-2 text-xs text-neutral-200 outline-none transition"
+                />
+              </div>
+
+              <div className="col-span-12 sm:col-span-6 space-y-1">
+                <label className="text-[9px] font-bold uppercase text-neutral-400">Bairro *</label>
+                <input
+                  type="text"
+                  value={addressNeighborhood}
+                  onChange={(e) => setAddressNeighborhood(e.target.value)}
+                  placeholder="Ex: Fragata"
+                  disabled={deliveryType !== 'delivery'}
+                  required={deliveryType === 'delivery'}
+                  className="w-full bg-neutral-900 border border-neutral-800 focus:border-yellow-450/40 disabled:opacity-40 disabled:bg-neutral-950/20 rounded-lg p-2 text-xs text-neutral-200 outline-none transition"
+                />
+              </div>
+
+              <div className="col-span-12 sm:col-span-6 space-y-1">
+                <label className="text-[9px] font-bold uppercase text-neutral-400">Complemento / Bloco / Ap</label>
+                <input
+                  type="text"
+                  value={addressComplement}
+                  onChange={(e) => setAddressComplement(e.target.value)}
+                  placeholder="Ex: Ap 101, Bloco C"
+                  disabled={deliveryType !== 'delivery'}
+                  className="w-full bg-neutral-900 border border-neutral-800 focus:border-yellow-450/40 disabled:opacity-40 disabled:bg-neutral-950/20 rounded-lg p-2 text-xs text-neutral-200 outline-none transition"
+                />
+              </div>
+
+              <div className="col-span-12 space-y-1">
+                <label className="text-[9px] font-bold uppercase text-neutral-400">Cidade / Estado</label>
+                <input
+                  type="text"
+                  value={addressCity}
+                  onChange={(e) => setAddressCity(e.target.value)}
+                  disabled={deliveryType !== 'delivery'}
+                  placeholder="Pelotas - RS"
+                  className="w-full bg-neutral-900 border border-neutral-800 focus:border-yellow-450/40 disabled:opacity-40 disabled:bg-neutral-950/20 rounded-lg p-2 text-xs text-neutral-200 outline-none transition"
+                />
+              </div>
+            </div>
           </div>
 
           {/* ITEM APPENDER FIELDSET */}
           <div className="border-t border-neutral-800 pt-5 space-y-3">
             <h4 className="text-xs font-bold text-neutral-300 uppercase tracking-wider">
-              {editingItemIdx !== null ? '🖊️ Editando Item do Pedido' : '⚡ Adicionar Produto / Pizza / Hambúrguer'}
+              {editingItemIdx !== null ? '🖊️ Editando Item do Pedido' : '⚡ Adicionar Produto do Menu (Supabase)'}
             </h4>
 
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 bg-neutral-950/45 p-4 rounded-xl border border-neutral-850/40">
+            <div className="grid grid-cols-12 gap-3.5 bg-neutral-950/45 p-4 rounded-xl border border-neutral-850/40">
               
-              {/* Product Name */}
-              <div className="space-y-1 col-span-1 md:col-span-6">
-                <label className="text-[10px] font-bold text-neutral-450 uppercase">Nome / Descrição</label>
-                <input
-                  type="text"
-                  value={itemName}
-                  onChange={(e) => setItemName(e.target.value)}
-                  placeholder="Ex: Coca Cola 350ml / Hambúrguer Artesanal..."
-                  className="w-full bg-neutral-900 border border-neutral-800 focus:border-yellow-450/40 rounded-lg p-2 text-xs text-neutral-200 outline-none"
-                />
+              {/* Product Autocomplete Input */}
+              <div className="space-y-1 col-span-12 md:col-span-8 relative">
+                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">Escolha o Produto (Digite para buscar) *</label>
+                {loadingDb ? (
+                  <div className="text-xs text-yellow-400 animate-pulse py-2">Carregando menu do Supabase...</div>
+                ) : (
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={itemName}
+                      onFocus={() => setShowSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 250)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setItemName(val);
+                        setShowSuggestions(true);
+                        
+                        // Check exact database match ignoring accents/casing
+                        const valNorm = removeAccents(val).trim();
+                        const match = dbProducts.find(p => removeAccents(p.nome).trim() === valNorm);
+                        if (match) {
+                          setSelectedProductId(match.id);
+                        } else {
+                          setSelectedProductId('custom');
+                        }
+                      }}
+                      placeholder="Ex: Marmitex, Pastel de Carne..."
+                      className="w-full bg-neutral-900 border border-neutral-850 focus:border-yellow-450/40 rounded-lg p-2 text-xs text-neutral-200 outline-none transition"
+                    />
+                    
+                    {/* Suggestions list dropdown */}
+                    {showSuggestions && (
+                      <div className="absolute left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-neutral-950 border border-neutral-800 rounded-lg shadow-2xl z-50 divide-y divide-neutral-900">
+                        {(() => {
+                          const queryTokens = removeAccents(itemName).trim().split(/\s+/).filter(Boolean);
+                          const filtered = dbProducts.filter(p => {
+                            if (queryTokens.length === 0) return true;
+                            const prodNameNorm = removeAccents(p.nome);
+                            return queryTokens.every(token => prodNameNorm.includes(token));
+                          });
+                          
+                          if (filtered.length === 0) {
+                            return (
+                              <div className="p-3 text-xs text-neutral-500 italic select-none">
+                                Nenhum produto correspondente cadastrado. Será considerado item personalizado.
+                              </div>
+                            );
+                          }
+                          
+                          return filtered.slice(0, 15).map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onMouseDown={() => {
+                                setItemName(p.nome);
+                                setSelectedProductId(p.id);
+                                setShowSuggestions(false);
+                              }}
+                              className="w-full text-left px-3 py-2.5 text-xs text-neutral-300 hover:bg-yellow-400/10 hover:text-yellow-400 transition flex items-center justify-between pointer-events-auto cursor-pointer"
+                            >
+                              <span className="font-semibold text-neutral-200">{p.nome}</span>
+                              <span className="font-mono text-[10px] text-yellow-500 font-extrabold bg-neutral-900 border border-neutral-850 px-2 py-0.5 rounded">
+                                R$ {Number(p.preco).toFixed(2)}
+                              </span>
+                            </button>
+                          ));
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* Custom price field for customizable items */}
+                {selectedProductId === 'custom' && itemName.trim() !== '' && (
+                  <div className="mt-2.5 space-y-1.5 animate-fade-in">
+                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">Preço Unitário (Item Personalizado) *</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-xs text-neutral-500 font-bold select-none">R$</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={customPrice}
+                        onChange={(e) => setCustomPrice(e.target.value)}
+                        placeholder="Ex: 14.50"
+                        className="w-full bg-neutral-900 border border-neutral-800 focus:border-yellow-450/40 rounded-lg p-2.5 pl-9 text-xs text-neutral-200 outline-none"
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Quantity picker */}
-              <div className="space-y-1 col-span-1 md:col-span-3">
-                <label className="text-[10px] font-bold text-neutral-450 uppercase">Quantidade</label>
-                <div className="flex items-center bg-neutral-900 rounded-lg border border-neutral-800 p-1">
+              <div className="space-y-1 col-span-12 md:col-span-4">
+                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Quantidade</label>
+                <div className="flex items-center bg-neutral-900 rounded-lg border border-neutral-800 p-1 h-9">
                   <button
                     type="button"
                     onClick={() => setItemQty(q => Math.max(1, q - 1))}
@@ -252,29 +588,142 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
                 </div>
               </div>
 
-              {/* Easy add button */}
-              <div className="col-span-1 md:col-span-3 flex items-end">
-                <button
-                  type="button"
-                  onClick={handleAddOrUpdateItem}
-                  disabled={!itemName.trim()}
-                  className="w-full h-9 bg-yellow-400 hover:bg-yellow-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-neutral-950 hover:text-neutral-950 font-bold text-xs rounded-lg flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  {editingItemIdx !== null ? 'Atualizar' : 'Adicionar'}
-                </button>
+              {/* Dynamic Additionals Grid */}
+              <div className="space-y-2 col-span-12">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                  <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
+                    🍟 Adicionais Extras do Produto
+                  </label>
+                  
+                  {/* Categorization Tabs */}
+                  <div className="flex flex-wrap gap-1 bg-neutral-950 p-0.5 rounded-md border border-neutral-850">
+                    {['suggerito', 'pastel', 'pratos', 'doces', 'todos'].map((cat) => {
+                      const labels: Record<string, string> = {
+                        suggerito: '✨ Sugeridos',
+                        pastel: '🥟 Pastéis',
+                        pratos: '🍛 Marmita/Lá Minuta',
+                        doces: '🍫 Doces & Sobremesas',
+                        todos: '🔍 Todos'
+                      };
+                      
+                      const isSel = activeCategory === cat;
+                      
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => {
+                            setActiveCategory(cat as any);
+                          }}
+                          className={`text-[9px] font-bold px-2 py-1 rounded transition whitespace-nowrap cursor-pointer ${
+                            isSel
+                              ? 'bg-yellow-400 text-neutral-950 font-extrabold'
+                              : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900'
+                          }`}
+                        >
+                          {labels[cat]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {dbAdditionals.length === 0 ? (
+                  <p className="text-[10px] text-neutral-500 italic">Nenhum adicional disponível no momento.</p>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 bg-neutral-900/60 p-2.5 rounded-lg border border-neutral-800">
+                    {(() => {
+                      const activeCat = activeCategory;
+                      const lowerName = itemName.toLowerCase();
+                      
+                      const filteredAdds = dbAdditionals.filter(add => {
+                        const lowAdd = add.nome.toLowerCase();
+                        if (activeCat === 'suggerito') {
+                          // Auto detect product
+                          if (lowerName.includes('pastel')) {
+                            return lowAdd.includes('pastel:') || ['prestígio', 'bolo', 'pudim', 'paçoquinha', 'geleia', 'moça', 'gibi'].some(x => lowAdd.includes(x));
+                          }
+                          if (lowerName.includes('marmita') || lowerName.includes('minuta') || lowerName.includes('bife') || lowerName.includes('chuleta') || lowerName.includes('frango') || lowerName.includes('arroz') || lowerName.includes('feijão')) {
+                            return lowAdd.includes('marmitex') || lowAdd.includes('adicional') || lowAdd.includes('talheres') || ['prestígio', 'bolo', 'pudim', 'paçoquinha', 'geleia', 'moça', 'gibi'].some(x => lowAdd.includes(x));
+                          }
+                          // None detected, show basic extras or candy
+                          return !lowAdd.includes('pastel:') && !lowAdd.includes('marmitex/') && !lowAdd.includes('adicional ');
+                        }
+                        if (activeCat === 'pastel') {
+                          return lowAdd.includes('pastel:');
+                        }
+                        if (activeCat === 'pratos') {
+                          return lowAdd.includes('marmitex') || lowAdd.includes('adicional');
+                        }
+                        if (activeCat === 'doces') {
+                          return !lowAdd.includes('pastel:') && !lowAdd.includes('marmitex/') && !lowAdd.includes('adicional ') && ['caseiro', 'paçoquinha', 'geleia', 'moça', 'gibi', 'bolo', 'dois amores', 'pudim'].some(x => lowAdd.includes(x));
+                        }
+                        return true; // todos
+                      });
+
+                      if (filteredAdds.length === 0) {
+                        return (
+                          <div className="col-span-full py-4 text-center text-xs text-neutral-500 italic">
+                            Nenhum adicional nesta categoria.
+                          </div>
+                        );
+                      }
+
+                      return filteredAdds.map((add) => {
+                        const isSelected = !!selectedAdditionals[add.id];
+                        return (
+                          <button
+                            key={add.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedAdditionals(prev => ({
+                                ...prev,
+                                [add.id]: !prev[add.id]
+                              }));
+                            }}
+                            className={`flex items-center justify-between p-2 rounded-lg border text-left cursor-pointer transition select-none ${
+                              isSelected
+                                ? 'bg-yellow-400/15 border-yellow-400 text-yellow-300 font-extrabold shadow-sm'
+                                : 'bg-neutral-950 border-neutral-850 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200'
+                            }`}
+                          >
+                            <span className="text-[10.5px] truncate max-w-[130px] font-medium">
+                              {add.nome.replace('Pastel: ', '').replace(' (Marmitex/Lá Minuta)', '')}
+                            </span>
+                            <span className="text-[9.5px] font-mono text-yellow-500 bg-neutral-900 border border-neutral-800/80 px-1 py-0.5 rounded ml-1 font-bold whitespace-nowrap">
+                              +R${Number(add.preco).toFixed(1)}
+                            </span>
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                )}
               </div>
 
               {/* Observations */}
-              <div className="space-y-1 col-span-1 md:col-span-12">
-                <label className="text-[10px] font-bold text-neutral-450 uppercase">Observações da Cozinha</label>
+              <div className="space-y-1 col-span-12 md:col-span-9">
+                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Observações da Cozinha</label>
                 <input
                   type="text"
                   value={itemObs}
                   onChange={(e) => setItemObs(e.target.value)}
-                  placeholder="Ex: Sem cebola, bem passado, maionese extra na mesa..."
+                  placeholder="Ex: Sem cebola, bem passado, maionese extra..."
                   className="w-full bg-neutral-900 border border-neutral-800 focus:border-yellow-450/40 rounded-lg p-2 text-xs text-neutral-200 outline-none"
                 />
+              </div>
+
+              {/* Easy add button */}
+              <div className="col-span-12 md:col-span-3 flex items-end pt-1 md:pt-0">
+                <button
+                  type="button"
+                  onClick={handleAddOrUpdateItem}
+                  disabled={!itemName.trim()}
+                  className="w-full h-9 bg-yellow-400 hover:bg-yellow-500 disabled:bg-neutral-850 disabled:text-neutral-500 text-neutral-950 hover:text-neutral-950 font-bold text-xs rounded-lg flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
+                >
+                  <Plus className="w-3.5 h-3.5 text-neutral-950" />
+                  {editingItemIdx !== null ? 'Atualizar' : 'Adicionar'}
+                </button>
               </div>
 
             </div>
@@ -288,22 +737,36 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
 
             {items.length === 0 ? (
               <div className="bg-neutral-950/20 border border-dashed border-neutral-800/80 rounded-xl p-8 text-center text-neutral-500 text-xs">
-                <ShoppingBag className="w-7 h-7 text-neutral-800 mx-auto mb-1.5" />
+                <ShoppingBag className="w-7 h-7 text-neutral-850 mx-auto mb-1.5 animate-pulse" />
                 Nenhum produto adicionado ainda. Lançe acima para compor a comanda.
               </div>
             ) : (
               <div className="border border-neutral-800 rounded-xl overflow-hidden bg-neutral-950/30">
                 <div className="divide-y divide-neutral-850">
                   {items.map((item, idx) => (
-                    <div key={idx} className="p-3 flex items-center justify-between gap-3 bg-neutral-900/40 hover:bg-neutral-900/80 transition">
+                    <div key={idx} className="p-3.5 flex items-center justify-between gap-3 bg-neutral-900/40 hover:bg-neutral-900/80 transition">
                       
                       <div className="min-w-0">
                         <div className="flex items-baseline gap-2">
                           <span className="font-mono text-xs font-bold text-yellow-400">{item.quantity}x</span>
-                          <span className="text-xs font-bold text-neutral-200 truncate">{item.name}</span>
+                          <span className="text-xs font-bold text-neutral-100">{item.name}</span>
+                          {item.price > 0 && (
+                            <span className="text-[10px] text-neutral-400 font-mono">
+                              (R$ {item.price.toFixed(2)})
+                            </span>
+                          )}
                         </div>
+                        {item.additionals && item.additionals.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {item.additionals.map((add, addIdx) => (
+                              <span key={addIdx} className="text-[9.5px] font-semibold text-yellow-400 bg-yellow-950/20 px-1.5 py-0.5 rounded border border-yellow-950/50">
+                                + {add.name} (+R$ {Number(add.price).toFixed(2)})
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         {item.observations && (
-                          <p className="text-[10px] text-neutral-400 bg-neutral-950/30 px-1.5 py-0.5 rounded italic mt-0.5 max-w-md truncate">
+                          <p className="text-[10px] text-neutral-400 bg-neutral-100/5 px-2 py-0.5 rounded italic mt-1 max-w-md truncate">
                             Obs: {item.observations}
                           </p>
                         )}
@@ -313,7 +776,7 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
                         <button
                           type="button"
                           onClick={() => handleEditItem(idx)}
-                          className="p-1 px-1.5 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 rounded transition"
+                          className="p-1 px-1.5 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-100 rounded transition"
                           title="Editar"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
@@ -342,7 +805,7 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 border border-neutral-800 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 text-xs font-bold rounded-xl transition cursor-pointer"
+            className="px-4 py-2 border border-neutral-850 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-200 text-xs font-bold rounded-xl transition cursor-pointer"
           >
             Cancelar
           </button>
@@ -350,7 +813,7 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
             type="button"
             onClick={handleSubmit}
             disabled={items.length === 0 || !customerName.trim()}
-            className="px-5 py-2.5 bg-yellow-400 hover:bg-yellow-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-neutral-950 font-extrabold text-xs rounded-xl transition cursor-pointer shadow-md shadow-yellow-450/10 active:scale-95"
+            className="px-5 py-2.5 bg-yellow-400 hover:bg-yellow-500 disabled:bg-neutral-850 disabled:text-neutral-500 text-neutral-950 font-extrabold text-xs rounded-xl transition cursor-pointer shadow-md shadow-yellow-450/10 active:scale-95 text-center"
           >
             {orderToEdit ? 'Salvar Alterações' : 'Concluir & Lançar'}
           </button>
