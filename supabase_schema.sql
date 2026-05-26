@@ -10,11 +10,17 @@ CREATE TABLE IF NOT EXISTS public.comandas (
     created_at TIMESTAMPTZ DEFAULT now(),
     delivery_type TEXT,
     customer_name TEXT,
+    customer_phone TEXT,
+    customer_address JSONB,
     items JSONB DEFAULT '[]'::jsonb,
     total NUMERIC(10, 2) DEFAULT 0.00,
     payment_method TEXT,
     status TEXT
 );
+
+-- Executar migrações progressivas se a tabela já existia sem essas colunas:
+ALTER TABLE public.comandas ADD COLUMN IF NOT EXISTS customer_phone TEXT;
+ALTER TABLE public.comandas ADD COLUMN IF NOT EXISTS customer_address JSONB;
 
 -- Habilitar RLS (Row Level Security) se desejar, ou deixar desativado para testes rápidos:
 ALTER TABLE public.comandas DISABLE ROW LEVEL SECURITY;

@@ -36,13 +36,36 @@ async function syncOrderToSupabase(order: NormalizedOrder) {
       created_at: order.createdAt,
       delivery_type: order.deliveryType,
       customer_name: order.customerName,
+      customer_phone: order.customerPhone || '',
+      customer_address: order.customerAddress || null,
       items: order.items,
       total: order.total,
       payment_method: order.paymentMethod,
       status: order.status
     });
     if (error) {
-      console.warn(`[Supabase Error] Não foi possível sincronizar a comanda ${order.displayId} (tabela "comandas" pode não existir ainda):`, error.message);
+      if (error.message.includes('column') || error.message.includes('not found') || error.code === '42703') {
+        // Fallback for database without phone/address columns
+        const { error: fallbackError } = await supabase.from('comandas').upsert({
+          id: order.id,
+          display_id: order.displayId,
+          platform: order.platform,
+          created_at: order.createdAt,
+          delivery_type: order.deliveryType,
+          customer_name: order.customerName,
+          items: order.items,
+          total: order.total,
+          payment_method: order.paymentMethod,
+          status: order.status
+        });
+        if (fallbackError) {
+          console.warn(`[Supabase Error] Não foi possível sincronizar a comanda ${order.displayId}:`, fallbackError.message);
+        } else {
+          console.log(`[Supabase] Comanda ${order.displayId} sincronizada com sucesso (modo compatibilidade).`);
+        }
+      } else {
+        console.warn(`[Supabase Error] Não foi possível sincronizar a comanda ${order.displayId} (tabela "comandas" pode não existir ainda):`, error.message);
+      }
     } else {
       console.log(`[Supabase] Comanda ${order.displayId} sincronizada com sucesso.`);
     }
@@ -324,7 +347,7 @@ loadDatabase();
   // API - Create custom/local order
   app.post('/api/orders/local', (req, res) => {
     try {
-      const { customerName, deliveryType, items, paymentMethod, total } = req.body;
+      const { customerName, customerPhone, deliveryType, items, paymentMethod, total } = req.body;
       
       const displayIdNum = orders.length > 0 
         ? Math.max(...orders.map(o => {
@@ -342,7 +365,7 @@ loadDatabase();
         orderTime: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
         deliveryType: deliveryType || 'local',
         customerName: customerName || 'Pedido Local',
-        customerPhone: '',
+        customerPhone: customerPhone || '',
         customerAddress: req.body.customerAddress,
         items: items || [],
         paymentMethod: paymentMethod || 'Dinheiro',
@@ -369,13 +392,14 @@ loadDatabase();
   app.put('/api/orders/:id', (req, res) => {
     try {
       const { id } = req.params;
-      const { customerName, deliveryType, items, paymentMethod, total, status } = req.body;
+      const { customerName, customerPhone, deliveryType, items, paymentMethod, total, status } = req.body;
       const idx = orders.findIndex(o => o.id === id);
       
       if (idx !== -1) {
         orders[idx] = {
           ...orders[idx],
           customerName: customerName !== undefined ? customerName : orders[idx].customerName,
+          customerPhone: customerPhone !== undefined ? customerPhone : orders[idx].customerPhone,
           deliveryType: deliveryType !== undefined ? deliveryType : orders[idx].deliveryType,
           items: items !== undefined ? items : orders[idx].items,
           paymentMethod: paymentMethod !== undefined ? paymentMethod : orders[idx].paymentMethod,
@@ -725,12 +749,33 @@ loadDatabase();
         created_at: order.createdAt || order.created_at || new Date().toISOString(),
         delivery_type: order.deliveryType || order.delivery_type,
         customer_name: order.customerName || order.customer_name,
+        customer_phone: order.customerPhone || order.customer_phone || '',
+        customer_address: order.customerAddress || order.customer_address || null,
         items: order.items,
         total: order.total,
         payment_method: order.paymentMethod || order.payment_method || 'PIX',
         status: order.status || 'pending'
       });
-      if (error) throw error;
+      if (error) {
+        if (error.message.includes('column') || error.message.includes('not found') || error.code === '42703') {
+          // Fallback
+          const { error: fallbackError } = await supabase.from('comandas').upsert({
+            id: order.id,
+            display_id: order.displayId || order.display_id,
+            platform: order.platform,
+            created_at: order.createdAt || order.created_at || new Date().toISOString(),
+            delivery_type: order.deliveryType || order.delivery_type,
+            customer_name: order.customerName || order.customer_name,
+            items: order.items,
+            total: order.total,
+            payment_method: order.paymentMethod || order.payment_method || 'PIX',
+            status: order.status || 'pending'
+          });
+          if (fallbackError) throw fallbackError;
+        } else {
+          throw error;
+        }
+      }
       res.status(201).json({ success: true });
     } catch (err: any) {
       res.status(400).json({ error: 'Erro ao salvar histórico', message: err?.message });

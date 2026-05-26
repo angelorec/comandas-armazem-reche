@@ -15,6 +15,8 @@ interface SupabaseComanda {
   created_at: string;
   delivery_type: 'delivery' | 'retirada' | 'local';
   customer_name: string;
+  customer_phone?: string;
+  customer_address?: any;
   items: any[];
   total: number;
   payment_method: string;
@@ -144,6 +146,8 @@ export default function ComandaHistoryModal({ isOpen, onClose, onSelectOrderForR
       orderTime: new Date(c.created_at).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
       deliveryType: c.delivery_type,
       customerName: c.customer_name,
+      customerPhone: c.customer_phone || '',
+      customerAddress: c.customer_address || undefined,
       items: c.items || [],
       paymentMethod: c.payment_method || 'PIX',
       paymentType: 'OFFLINE',

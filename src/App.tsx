@@ -366,7 +366,14 @@ export default function App() {
                     <p><strong>CLIENTE:</strong> {selectedOrder.customerName}</p>
                     {selectedOrder.customerPhone && <p><strong>FONE:</strong> {selectedOrder.customerPhone}</p>}
                     {selectedOrder.customerAddress && (
-                      <p><strong>ENDEREÇO:</strong> {selectedOrder.customerAddress.formatted}</p>
+                      <p>
+                        <strong>ENDEREÇO:</strong> {selectedOrder.customerAddress.formatted}
+                        {selectedOrder.deliveryType === 'delivery' && selectedOrder.customerPhone && (
+                          <span className="block font-bold mt-1 text-[10px] text-neutral-800 bg-neutral-100 p-1 rounded">
+                            📞 FONE ENTREGA: {selectedOrder.customerPhone}
+                          </span>
+                        )}
+                      </p>
                     )}
                   </div>
                   
@@ -874,7 +881,14 @@ export default function App() {
                         {selectedOrder.customerAddress && (
                           <div>
                             <p className="font-semibold mt-0.5">ENDEREÇO:</p>
-                            <p className="text-[10px] text-neutral-600 pl-1">{selectedOrder.customerAddress.formatted}</p>
+                            <p className="text-[10px] text-neutral-600 pl-1">
+                              {selectedOrder.customerAddress.formatted}
+                              {selectedOrder.deliveryType === 'delivery' && selectedOrder.customerPhone && (
+                                <span className="block font-bold text-[9.5px] text-red-700 bg-red-50/60 px-1.5 py-0.5 rounded-sm mt-1 border border-red-100/40">
+                                  📞 FONE ENTREGA: {selectedOrder.customerPhone}
+                                </span>
+                              )}
+                            </p>
                           </div>
                         )}
                       </div>
