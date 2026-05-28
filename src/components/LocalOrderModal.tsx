@@ -155,6 +155,20 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
     }
   }, [isOpen, orderToEdit]);
 
+  // Auto-switch additionals category based on selected product name
+  useEffect(() => {
+    if (!itemName.trim()) {
+      setActiveCategory('suggerito');
+      return;
+    }
+    const lower = removeAccents(itemName).toLowerCase();
+    if (lower.includes('marmita') || lower.includes('marmitex') || lower.includes('minuta')) {
+      setActiveCategory('pratos');
+    } else if (lower.includes('pastel')) {
+      setActiveCategory('pastel');
+    }
+  }, [itemName]);
+
   if (!isOpen) return null;
 
   const handleAddOrUpdateItem = () => {
