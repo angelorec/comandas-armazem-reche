@@ -23,6 +23,12 @@ const formatAddName = (name: string): string => {
     .trim();
 };
 
+const isProteinAdditional = (name: string): boolean => {
+  if (!name) return false;
+  const lower = name.toLowerCase();
+  return lower.includes('(marmitex/la minuta)') || lower.includes('(marmitex/lá minuta)');
+};
+
 export default function App() {
   const [orders, setOrders] = useState<NormalizedOrder[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -444,28 +450,34 @@ export default function App() {
               </div>
 
               <div className="space-y-3">
-                {selectedOrder.items.map((item, idx) => (
-                  <div key={idx} className="border-b border-neutral-200 pb-2 last:border-b-0">
-                    <div className="flex justify-between text-sm font-black">
-                      <span>{item.quantity}x {item.name}</span>
+                {selectedOrder.items.map((item, idx) => {
+                  const protein = item.additionals?.find(add => isProteinAdditional(add.name));
+                  const otherAdditionals = item.additionals?.filter(add => !isProteinAdditional(add.name)) || [];
+                  const displayName = protein ? `${item.name} (${formatAddName(protein.name)})` : item.name;
+
+                  return (
+                    <div key={idx} className="border-b border-neutral-200 pb-2 last:border-b-0">
+                      <div className="flex justify-between text-sm font-black">
+                        <span>{item.quantity}x {displayName}</span>
+                      </div>
+                      {otherAdditionals.length > 0 && (
+                        <div className="pl-3 mt-1 space-y-0.5 text-xs text-neutral-700 font-semibold bg-neutral-50 p-1">
+                          <span className="text-[9px] text-neutral-400 uppercase tracking-wider block font-bold">Adicionais:</span>
+                          {otherAdditionals.map((add, addIdx) => (
+                            <div key={addIdx}>
+                              • {add.quantity}x {formatAddName(add.name)}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {item.observations && (
+                        <div className="mt-1 pl-2 border-l-2 border-yellow-500 text-xs italic font-bold text-neutral-800 bg-yellow-50 p-1">
+                          Obs: {item.observations}
+                        </div>
+                      )}
                     </div>
-                    {item.additionals && item.additionals.length > 0 && (
-                      <div className="pl-3 mt-1 space-y-0.5 text-xs text-neutral-700 font-semibold bg-neutral-50 p-1">
-                        <span className="text-[9px] text-neutral-400 uppercase tracking-wider block font-bold">Adicionais:</span>
-                        {item.additionals.map((add, addIdx) => (
-                          <div key={addIdx}>
-                            • {add.quantity}x {formatAddName(add.name)}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {item.observations && (
-                      <div className="mt-1 pl-2 border-l-2 border-yellow-500 text-xs italic font-bold text-neutral-800 bg-yellow-50 p-1">
-                        Obs: {item.observations}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="mt-3 text-center text-[10px] text-neutral-500 pt-2 border-t border-dashed border-neutral-300">
@@ -1013,37 +1025,43 @@ export default function App() {
 
                     {/* Content Section - ONLY target details: quantities, item itself, additionals, and observation */}
                     <div className="space-y-3 font-semibold text-neutral-900">
-                      {selectedOrder.items.map((item, idx) => (
-                        <div key={idx} className="border-b border-neutral-350 pb-2 last:border-b-0 space-y-1">
-                          <div className="flex items-start justify-between">
-                            <span className="text-sm font-black tracking-tight flex items-center gap-1">
-                              <span className="bg-neutral-900 text-white text-[11px] px-1.5 py-0.2 rounded-sm font-mono mr-1">
-                                {item.quantity}x
+                      {selectedOrder.items.map((item, idx) => {
+                        const protein = item.additionals?.find(add => isProteinAdditional(add.name));
+                        const otherAdditionals = item.additionals?.filter(add => !isProteinAdditional(add.name)) || [];
+                        const displayName = protein ? `${item.name} (${formatAddName(protein.name)})` : item.name;
+
+                        return (
+                          <div key={idx} className="border-b border-neutral-350 pb-2 last:border-b-0 space-y-1">
+                            <div className="flex items-start justify-between">
+                              <span className="text-sm font-black tracking-tight flex items-center gap-1">
+                                <span className="bg-neutral-900 text-white text-[11px] px-1.5 py-0.2 rounded-sm font-mono mr-1">
+                                  {item.quantity}x
+                                </span>
+                                {displayName}
                               </span>
-                              {item.name}
-                            </span>
+                            </div>
+
+                            {/* List of additionals */}
+                            {otherAdditionals.length > 0 && (
+                              <div className="pl-3 py-1 text-xs text-neutral-800 font-semibold bg-yellow-100/60 rounded">
+                                <p className="text-[8px] uppercase tracking-wider text-neutral-500 font-bold block mb-0.5">Adicionais:</p>
+                                {otherAdditionals.map((add, addIdx) => (
+                                  <div key={addIdx} className="font-bold">
+                                    + {add.quantity}x {formatAddName(add.name)}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Observations */}
+                            {item.observations && (
+                              <div className="mt-1 pl-2 border-l-3 border-neutral-950 text-[11px] font-extrabold text-neutral-950 bg-yellow-200/80 px-2 py-1 uppercase rounded-sm">
+                                ⚠️ OBS: {item.observations}
+                              </div>
+                            )}
                           </div>
-
-                          {/* List of additionals */}
-                          {item.additionals && item.additionals.length > 0 && (
-                            <div className="pl-3 py-1 text-xs text-neutral-800 font-semibold bg-yellow-100/60 rounded">
-                              <p className="text-[8px] uppercase tracking-wider text-neutral-500 font-bold block mb-0.5">Adicionais:</p>
-                              {item.additionals.map((add, addIdx) => (
-                                <div key={addIdx} className="font-bold">
-                                  + {add.quantity}x {formatAddName(add.name)}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Observations */}
-                          {item.observations && (
-                            <div className="mt-1 pl-2 border-l-3 border-neutral-950 text-[11px] font-extrabold text-neutral-950 bg-yellow-200/80 px-2 py-1 uppercase rounded-sm">
-                              ⚠️ OBS: {item.observations}
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     {/* Extra disclaimer block */}
@@ -1112,7 +1130,7 @@ export default function App() {
 
               {/* Bottom Quick actions */}
               <div className="flex justify-between items-center gap-2.5 mt-3 pt-3 border-t border-neutral-850/65">
-                <div>
+                <div className="flex items-center gap-2">
                   <button
                     id="btn-edit-comanda-quick"
                     onClick={() => handleOpenEditLocalOrderModal(selectedOrder)}
@@ -1121,6 +1139,16 @@ export default function App() {
                   >
                     <Edit className="w-3.5 h-3.5 text-neutral-400" />
                     Editar Pedido
+                  </button>
+
+                  <button
+                    id="btn-print-physically"
+                    onClick={printDirectly}
+                    className="px-3.5 py-1.5 bg-neutral-850 hover:bg-neutral-800 text-yellow-400 hover:text-yellow-300 border border-neutral-800 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    title="Imprimir com a impressora física (Diálogo do sistema)"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    Teste Imp. Física
                   </button>
                 </div>
                 <button

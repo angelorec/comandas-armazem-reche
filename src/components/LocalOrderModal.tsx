@@ -33,7 +33,7 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
   
   // Supabase items fetched cached
   const [dbProducts, setDbProducts] = useState<{ id: any; nome: string; preco: number }[]>([]);
-  const [dbAdditionals, setDbAdditionals] = useState<{ id: any; nome: string; preco: number }[]>([]);
+  const [dbAdditionals, setDbAdditionals] = useState<{ id: any; nome: string; preco: number; categoria_id?: number }[]>([]);
   const [loadingDb, setLoadingDb] = useState(false);
 
   // Address fields
@@ -54,10 +54,11 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
   const [itemQty, setItemQty] = useState(1);
   const [itemObs, setItemObs] = useState('');
   const [selectedAdditionals, setSelectedAdditionals] = useState<Record<string | number, boolean>>({});
+  const [selectedProteinId, setSelectedProteinId] = useState<string | number>('');
 
   // Editing existing item index
   const [editingItemIdx, setEditingItemIdx] = useState<number | null>(null);
-  const [activeCategory, setActiveCategory] = useState<'suggerito' | 'pastel' | 'pratos' | 'doces' | 'todos'>('suggerito');
+  const [activeCategory, setActiveCategory] = useState<'suggerito' | 'pastel' | 'pratos' | 'cheese' | 'doces' | 'todos'>('suggerito');
 
   // Fetch Supabase products & additionals on open
   useEffect(() => {
@@ -95,11 +96,17 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
             { id: 1123, nome: 'Coca-Cola Lata', preco: 6.00 }
           ]);
           setDbAdditionals([
-            { id: 2001, nome: 'Bife de Coxão Mole (Marmitex/Lá Minuta)', preco: 0.00 },
-            { id: 2003, nome: 'Chuleta de Contrafilé (Marmitex/Lá Minuta)', preco: 3.00 },
-            { id: 2025, nome: 'Pastel: Queijo', preco: 6.00 },
-            { id: 2030, nome: 'Pastel: Cheddar', preco: 7.00 },
-            { id: 2034, nome: 'Pastel: Bacon', preco: 7.00 }
+            { id: 2001, nome: 'Bife de Coxão Mole (Marmitex/Lá Minuta)', preco: 0.00, categoria_id: 1 },
+            { id: 2002, nome: 'Frango à Parmegiana (Marmitex/Lá Minuta)', preco: 0.00, categoria_id: 1 },
+            { id: 2003, nome: 'Chuleta de Contrafilé (Marmitex/Lá Minuta)', preco: 3.05, categoria_id: 1 },
+            { id: 2004, nome: 'Bife de Lentilha (Vegetariano) (Marmitex/Lá Minuta)', preco: 0.00, categoria_id: 1 },
+            { id: 2009, nome: 'Adicional Bife de Coxão Mole Precoce', preco: 14.00, categoria_id: 2 },
+            { id: 2011, nome: 'Adicional Chuleta de Contrafilé', preco: 16.00, categoria_id: 2 },
+            { id: 2016, nome: 'Adicional Ovo Frito', preco: 5.00, categoria_id: 3 },
+            { id: 2017, nome: 'Talheres Descartáveis', preco: 0.00, categoria_id: 3 },
+            { id: 2025, nome: 'Pastel: Queijo', preco: 6.00, categoria_id: 3 },
+            { id: 2030, nome: 'Pastel: Cheddar', preco: 7.00, categoria_id: 8 },
+            { id: 2034, nome: 'Pastel: Bacon', preco: 7.00, categoria_id: 8 }
           ]);
         })
         .finally(() => {
@@ -149,6 +156,7 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
       setItemObs('');
       setSelectedProductId('');
       setSelectedAdditionals({});
+      setSelectedProteinId('');
       setEditingItemIdx(null);
       setShowSuggestions(false);
       setCustomPrice('');
@@ -171,8 +179,16 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
 
   if (!isOpen) return null;
 
+  const lowerName = removeAccents(itemName).toLowerCase();
+  const isMarmitaOrMinuta = lowerName.includes('marmita') || lowerName.includes('marmitex') || lowerName.includes('minuta');
+
   const handleAddOrUpdateItem = () => {
     if (!itemName.trim()) return;
+
+    if (isMarmitaOrMinuta && !selectedProteinId) {
+      alert('Por favor, selecione uma proteína para a marmita / lá minuta.');
+      return;
+    }
 
     // Resolve base price
     let basePrice = 0;
@@ -186,6 +202,20 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
 
     // Resolve additionals selected
     const additionalList: NormalizedOrderItemAdditional[] = [];
+
+    // First, push the protein additional if applicable
+    if (isMarmitaOrMinuta && selectedProteinId) {
+      const matchedAdd = dbAdditionals.find(a => a.id.toString() === selectedProteinId.toString());
+      if (matchedAdd) {
+        additionalList.push({
+          name: matchedAdd.nome,
+          quantity: 1,
+          price: Number(matchedAdd.preco) || 0
+        });
+      }
+    }
+
+    // Push other additions selected in the extras grid
     Object.entries(selectedAdditionals).forEach(([id, checked]) => {
       if (checked) {
         const matchedAdd = dbAdditionals.find(a => a.id.toString() === id.toString());
@@ -224,6 +254,7 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
     setItemObs('');
     setSelectedProductId('');
     setSelectedAdditionals({});
+    setSelectedProteinId('');
     setShowSuggestions(false);
     setCustomPrice('');
   };
@@ -244,16 +275,23 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
       setCustomPrice(item.price ? item.price.toString() : '');
     }
 
-    // Capture additionals mappings
+    // Capture additionals mappings separating protein from extra additionals
     const addMap: Record<string | number, boolean> = {};
+    let proteinId: string | number = '';
     if (item.additionals) {
       item.additionals.forEach(add => {
         const matchedAdd = dbAdditionals.find(a => a.nome.toLowerCase() === add.name.toLowerCase());
         if (matchedAdd) {
-          addMap[matchedAdd.id] = true;
+          const isProtein = matchedAdd.categoria_id === 1 || matchedAdd.nome.toLowerCase().includes('(marmitex/lá minuta)');
+          if (isProtein) {
+            proteinId = matchedAdd.id;
+          } else {
+            addMap[matchedAdd.id] = true;
+          }
         }
       });
     }
+    setSelectedProteinId(proteinId);
     setSelectedAdditionals(addMap);
     setEditingItemIdx(idx);
     setShowSuggestions(false);
@@ -268,6 +306,7 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
       setItemObs('');
       setSelectedProductId('');
       setSelectedAdditionals({});
+      setSelectedProteinId('');
       setShowSuggestions(false);
       setCustomPrice('');
     }
@@ -613,6 +652,31 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
                 </div>
               </div>
 
+              {/* Protein dropdown listbox for Marmitex / Lá Minuta */}
+              {isMarmitaOrMinuta && (
+                <div className="space-y-1 col-span-12 animate-fade-in">
+                  <label className="text-[11px] font-extrabold text-yellow-400 uppercase tracking-wider block flex items-center gap-1.5">
+                    🥩 Escolha a Proteína (Obrigatório) *
+                  </label>
+                  <select
+                    value={selectedProteinId}
+                    onChange={(e) => setSelectedProteinId(e.target.value)}
+                    className="w-full bg-neutral-900 border border-neutral-800 focus:border-yellow-400/40 rounded-lg p-2.5 text-xs text-neutral-200 outline-none transition focus:ring-1 focus:ring-yellow-400/20"
+                    required
+                  >
+                    <option value="">Selecione uma proteína para a marmita / lá minuta...</option>
+                    {dbAdditionals
+                      .filter(add => add.categoria_id === 1 || add.nome.toLowerCase().includes('(marmitex/lá minuta)'))
+                      .map(add => (
+                        <option key={add.id} value={add.id}>
+                          {add.nome.replace(' (Marmitex/Lá Minuta)', '')} {add.preco > 0 ? `(+R$ ${Number(add.preco).toFixed(2)})` : '(Incluso)'}
+                        </option>
+                      ))
+                    }
+                  </select>
+                </div>
+              )}
+
               {/* Dynamic Additionals Grid */}
               <div className="space-y-4 col-span-12 mt-2">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
@@ -622,11 +686,12 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
                   
                   {/* Categorization Tabs */}
                   <div className="flex flex-wrap gap-1 bg-neutral-950 p-1 rounded-xl border border-neutral-850">
-                    {['suggerito', 'pastel', 'pratos', 'doces', 'todos'].map((cat) => {
+                    {['suggerito', 'pastel', 'pratos', 'cheese', 'doces', 'todos'].map((cat) => {
                       const labels: Record<string, string> = {
                         suggerito: '✨ Sugeridos',
                         pastel: '🥟 Pastéis',
                         pratos: '🍛 Marmita/Lá Minuta',
+                        cheese: '🧀 Cheese',
                         doces: '🍫 Doces & Sobremesas',
                         todos: '🔍 Todos'
                       };
@@ -642,8 +707,8 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
                           }}
                           className={`text-[10px] sm:text-xs font-bold px-3 py-1.5 rounded-lg transition-all whitespace-nowrap cursor-pointer shadow-sm ${
                             isSel
-                              ? 'bg-yellow-400 text-neutral-950 font-black scale-[1.02]'
-                              : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900 border border-transparent'
+                                ? 'bg-yellow-400 text-neutral-950 font-black scale-[1.02]'
+                                : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900 border border-transparent'
                           }`}
                         >
                           {labels[cat]}
@@ -659,29 +724,41 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-neutral-950/60 p-4 rounded-xl border border-neutral-800/60 shadow-inner">
                     {(() => {
                       const activeCat = activeCategory;
-                      const lowerName = itemName.toLowerCase();
                       
                       const filteredAdds = dbAdditionals.filter(add => {
                         const lowAdd = add.nome.toLowerCase();
+                        
+                        // Protein option items (category 1) are parsed inside the select box, not in this extras grid!
+                        const isProtein = add.categoria_id === 1 || lowAdd.includes('(marmitex/lá minuta)');
+                        if (isProtein) {
+                          return false;
+                        }
+
+                        if (activeCat === 'cheese') {
+                          return add.categoria_id === 8 || add.categoria_id === 3;
+                        }
+
                         if (activeCat === 'suggerito') {
-                          // Auto detect product
+                          // Auto detect product suggestions
                           if (lowerName.includes('pastel')) {
-                            return lowAdd.includes('pastel:') || ['prestígio', 'bolo', 'pudim', 'paçoquinha', 'geleia', 'moça', 'gibi'].some(x => lowAdd.includes(x));
+                            return add.categoria_id === 8 || add.categoria_id === 3 || lowAdd.includes('pastel:') || ['prestígio', 'bolo', 'pudim', 'paçoquinha', 'geleia', 'moça', 'gibi'].some(x => lowAdd.includes(x));
                           }
-                          if (lowerName.includes('marmita') || lowerName.includes('minuta') || lowerName.includes('bife') || lowerName.includes('chuleta') || lowerName.includes('frango') || lowerName.includes('arroz') || lowerName.includes('feijão')) {
-                            return lowAdd.includes('marmitex') || lowAdd.includes('adicional') || lowAdd.includes('talheres') || ['prestígio', 'bolo', 'pudim', 'paçoquinha', 'geleia', 'moça', 'gibi'].some(x => lowAdd.includes(x));
+                          if (isMarmitaOrMinuta) {
+                            // Only allow Category_id 2 & 3 for Marmita/La Minuta extra additionals!
+                            return add.categoria_id === 2 || add.categoria_id === 3;
                           }
-                          // None detected, show basic extras or candy
-                          return !lowAdd.includes('pastel:') && !lowAdd.includes('marmitex/') && !lowAdd.includes('adicional ');
+                          // None detected, show basic extras or sweets (exclude pastels and other specific codes)
+                          return add.categoria_id === 3 || (!lowAdd.includes('pastel:') && !lowAdd.includes('marmitex/') && !lowAdd.includes('adicional '));
                         }
                         if (activeCat === 'pastel') {
-                          return lowAdd.includes('pastel:');
+                          return add.categoria_id === 8 || add.categoria_id === 3 || lowAdd.includes('pastel:');
                         }
                         if (activeCat === 'pratos') {
-                          return lowAdd.includes('marmitex') || lowAdd.includes('adicional');
+                          // Only include categories 2 and 3 for Marmitex / La Minuta extra additions!
+                          return add.categoria_id === 2 || add.categoria_id === 3;
                         }
                         if (activeCat === 'doces') {
-                          return !lowAdd.includes('pastel:') && !lowAdd.includes('marmitex/') && !lowAdd.includes('adicional ') && ['caseiro', 'paçoquinha', 'geleia', 'moça', 'gibi', 'bolo', 'dois amores', 'pudim'].some(x => lowAdd.includes(x));
+                          return add.categoria_id === 4 || (!lowAdd.includes('pastel:') && !lowAdd.includes('marmitex/') && !lowAdd.includes('adicional ') && ['caseiro', 'paçoquinha', 'geleia', 'moça', 'gibi', 'bolo', 'dois amores', 'pudim'].some(x => lowAdd.includes(x)));
                         }
                         return true; // todos
                       });
