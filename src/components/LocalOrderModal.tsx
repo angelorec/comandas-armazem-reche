@@ -30,6 +30,22 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryType, setDeliveryType] = useState<'delivery' | 'retirada' | 'local'>('local');
+
+  // Customer suggestions
+  const [savedCustomers, setSavedCustomers] = useState<{
+    name: string;
+    phone: string;
+    address?: {
+      street: string;
+      number: string;
+      neighborhood: string;
+      complement: string;
+      city: string;
+    };
+    lastDeliveryType?: 'delivery' | 'retirada' | 'local';
+  }[]>([]);
+  const [showCustomerNameSuggestions, setShowCustomerNameSuggestions] = useState(false);
+  const [showCustomerPhoneSuggestions, setShowCustomerPhoneSuggestions] = useState(false);
   
   // Supabase items fetched cached
   const [dbProducts, setDbProducts] = useState<{ id: any; nome: string; preco: number }[]>([]);
@@ -118,6 +134,16 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
   // Initialize form when modal opens or order changes
   useEffect(() => {
     if (isOpen) {
+      // Load saved customers
+      const saved = localStorage.getItem('restaurant_saved_customers');
+      if (saved) {
+        try {
+          setSavedCustomers(JSON.parse(saved));
+        } catch (e) {
+          console.error('Error loading saved customers:', e);
+        }
+      }
+
       if (orderToEdit) {
         setCustomerName(orderToEdit.customerName);
         setCustomerPhone(orderToEdit.customerPhone || '');
@@ -312,6 +338,23 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
     }
   };
 
+  const handleSelectCustomer = (cust: any) => {
+    setCustomerName(cust.name);
+    setCustomerPhone(cust.phone || '');
+    if (cust.lastDeliveryType) {
+      setDeliveryType(cust.lastDeliveryType);
+    }
+    if (cust.address) {
+      setAddressStreet(cust.address.street || '');
+      setAddressNumber(cust.address.number || '');
+      setAddressNeighborhood(cust.address.neighborhood || '');
+      setAddressComplement(cust.address.complement || '');
+      setAddressCity(cust.address.city || 'Pelotas');
+    }
+    setShowCustomerNameSuggestions(false);
+    setShowCustomerPhoneSuggestions(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!customerName.trim()) {
@@ -358,6 +401,47 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
       customerAddress: customerAddressObj
     };
 
+    // Save or update customer in localStorage list
+    if (deliveryType === 'delivery' || deliveryType === 'retirada') {
+      const phoneClean = customerPhone.trim();
+      const nameClean = customerName.trim();
+      if (nameClean) {
+        let updatedList = [...savedCustomers];
+        // Find if already exists by phone (if provided) or name
+        const existingIdx = updatedList.findIndex(c => {
+          if (phoneClean && c.phone && c.phone === phoneClean) return true;
+          return c.name.toLowerCase() === nameClean.toLowerCase();
+        });
+
+        const newCust = {
+          name: nameClean,
+          phone: phoneClean,
+          lastDeliveryType: deliveryType,
+          ...(deliveryType === 'delivery' ? {
+            address: {
+              street: addressStreet.trim(),
+              number: addressNumber.trim(),
+              neighborhood: addressNeighborhood.trim(),
+              complement: addressComplement.trim(),
+              city: addressCity.trim()
+            }
+          } : (existingIdx >= 0 && updatedList[existingIdx].address ? { address: updatedList[existingIdx].address } : undefined))
+        };
+
+        if (existingIdx >= 0) {
+          updatedList[existingIdx] = {
+            ...updatedList[existingIdx],
+            ...newCust
+          };
+        } else {
+          updatedList.push(newCust);
+        }
+
+        localStorage.setItem('restaurant_saved_customers', JSON.stringify(updatedList));
+        setSavedCustomers(updatedList);
+      }
+    }
+
     await onSave(data);
     onClose();
   };
@@ -390,33 +474,99 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
           <div className="grid grid-cols-12 gap-4">
             
             {/* Customer name */}
-            <div className="space-y-1.5 col-span-12 md:col-span-7">
+            <div className="space-y-1.5 col-span-12 md:col-span-7 relative">
               <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5 text-yellow-500" /> Nome do Cliente / Mesa *
               </label>
               <input
                 type="text"
                 value={customerName}
+                onFocus={() => setShowCustomerNameSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowCustomerNameSuggestions(false), 250)}
                 onChange={(e) => setCustomerName(e.target.value)}
                 placeholder="Exemplo: Mesa 04 (Carlos)"
                 className="w-full bg-neutral-950 border border-neutral-800 focus:border-yellow-400/40 rounded-xl px-3 py-2.5 text-xs text-neutral-200 outline-none transition focus:ring-1 focus:ring-yellow-400/20"
                 required
               />
+
+              {/* Name Suggestions */}
+              {showCustomerNameSuggestions && customerName.trim().length > 0 && (
+                <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-neutral-950 border border-neutral-800 rounded-lg shadow-2xl z-50 divide-y divide-neutral-900">
+                  {(() => {
+                    const queryNorm = removeAccents(customerName).trim().toLowerCase();
+                    const filtered = savedCustomers.filter(c => 
+                      removeAccents(c.name).toLowerCase().includes(queryNorm)
+                    );
+
+                    if (filtered.length === 0) return null;
+
+                    return filtered.map((c, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onMouseDown={() => handleSelectCustomer(c)}
+                        className="w-full text-left px-3 py-2.5 text-xs text-neutral-350 hover:bg-yellow-400/10 hover:text-yellow-400 transition flex items-center justify-between cursor-pointer"
+                      >
+                        <div>
+                          <p className="font-bold">{c.name}</p>
+                          <p className="text-[10px] text-neutral-500">{c.phone || 'Sem telefone'}</p>
+                        </div>
+                        <span className="text-[9px] bg-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded uppercase font-bold">
+                          {c.lastDeliveryType === 'delivery' ? 'Delivery' : c.lastDeliveryType === 'retirada' ? 'Balcão' : 'Local'}
+                        </span>
+                      </button>
+                    ));
+                  })()}
+                </div>
+              )}
             </div>
 
             {/* Customer Phone */}
-            <div className="space-y-1.5 col-span-12 md:col-span-5">
+            <div className="space-y-1.5 col-span-12 md:col-span-5 relative">
               <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
                 <Phone className="w-3.5 h-3.5 text-yellow-500" /> Telefone / WhatsApp do Cliente
               </label>
               <input
                 type="text"
                 value={customerPhone}
+                onFocus={() => setShowCustomerPhoneSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowCustomerPhoneSuggestions(false), 250)}
                 onChange={(e) => setCustomerPhone(e.target.value)}
                 placeholder="Ex: (53) 99123-4567"
                 required={deliveryType === 'delivery'}
                 className="w-full bg-neutral-950 border border-neutral-800 focus:border-yellow-400/40 rounded-xl px-3 py-2.5 text-xs text-neutral-200 outline-none transition focus:ring-1 focus:ring-yellow-400/20"
               />
+
+              {/* Phone Suggestions */}
+              {showCustomerPhoneSuggestions && customerPhone.trim().length > 0 && (
+                <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-neutral-950 border border-neutral-800 rounded-lg shadow-2xl z-50 divide-y divide-neutral-900">
+                  {(() => {
+                    const queryClean = customerPhone.replace(/\D/g, '');
+                    const filtered = savedCustomers.filter(c => 
+                      c.phone && c.phone.replace(/\D/g, '').includes(queryClean)
+                    );
+
+                    if (filtered.length === 0) return null;
+
+                    return filtered.map((c, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onMouseDown={() => handleSelectCustomer(c)}
+                        className="w-full text-left px-3 py-2.5 text-xs text-neutral-350 hover:bg-yellow-400/10 hover:text-yellow-400 transition flex items-center justify-between cursor-pointer"
+                      >
+                        <div>
+                          <p className="font-bold">{c.name}</p>
+                          <p className="text-[10px] text-neutral-500">{c.phone}</p>
+                        </div>
+                        <span className="text-[9px] bg-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded uppercase font-bold">
+                          {c.lastDeliveryType === 'delivery' ? 'Delivery' : c.lastDeliveryType === 'retirada' ? 'Balcão' : 'Local'}
+                        </span>
+                      </button>
+                    ));
+                  })()}
+                </div>
+              )}
             </div>
 
             {/* Delivery type selection */}

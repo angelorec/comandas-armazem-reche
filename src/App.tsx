@@ -271,6 +271,14 @@ export default function App() {
           body: JSON.stringify(orderData)
         });
         if (res.ok) {
+          try {
+            const data = await res.json();
+            if (data && data.order && data.order.id) {
+              setSelectedOrderId(data.order.id);
+            }
+          } catch (err) {
+            console.error('Error parsing response:', err);
+          }
           fetchOrders(true);
         }
       } else {
@@ -280,6 +288,14 @@ export default function App() {
           body: JSON.stringify(orderData)
         });
         if (res.ok) {
+          try {
+            const data = await res.json();
+            if (data && data.order && data.order.id) {
+              setSelectedOrderId(data.order.id);
+            }
+          } catch (err) {
+            console.error('Error parsing response:', err);
+          }
           fetchOrders(true);
         }
       }
@@ -556,10 +572,10 @@ export default function App() {
       </div>
 
       {/* Main Grid Viewport */}
-      <main className="flex-1 p-4 md:p-6 max-w-[1720px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-5 overflow-hidden">
+      <main className="flex-1 p-4 md:p-6 max-w-[1720px] mx-auto w-full grid grid-cols-1 xl:grid-cols-12 gap-5 overflow-y-auto xl:overflow-hidden">
         
         {/* Full-Width stats overview banner bar */}
-        <div className="col-span-12">
+        <div className="col-span-1 xl:col-span-12">
           <DashboardStats 
             orders={orders} 
             onRefresh={() => fetchOrders()} 
@@ -602,7 +618,7 @@ export default function App() {
         </div>
 
         {/* COLUMN 1: LIVE ORDERS LISTING AND QUEUE (Left column, 4 cols width on desktop) */}
-        <section id="sidebar-queue-column" className="lg:col-span-4 flex flex-col bg-neutral-900 border border-neutral-800/80 rounded-xl overflow-hidden shadow-lg lg:h-[780px]">
+        <section id="sidebar-queue-column" className="col-span-1 xl:col-span-4 flex flex-col bg-neutral-900 border border-neutral-800/80 rounded-xl overflow-hidden shadow-lg xl:h-[780px]">
           
           {/* Header Controls for Queue search & filters */}
           <div className="p-3 border-b border-neutral-800 bg-neutral-900/50 space-y-2.5">
@@ -702,7 +718,7 @@ export default function App() {
           </div>
 
           {/* Scrolling Comanda Queue List */}
-          <div id="comandas-queue-scroller" className="flex-1 overflow-y-auto divide-y divide-neutral-850 bg-neutral-950/20 h-96 lg:h-auto">
+          <div id="comandas-queue-scroller" className="flex-1 overflow-y-auto divide-y divide-neutral-850 bg-neutral-950/20 h-96 xl:h-auto">
             {filteredActiveOrders.length === 0 ? (
               <div className="p-8 text-center text-xs text-neutral-500 space-y-2">
                 <ShoppingBag className="w-8 h-8 text-neutral-700 mx-auto" />
@@ -843,7 +859,7 @@ export default function App() {
         </section>
 
         {/* COLUMN 2: PRIMARY PRINT PREVIEW PANEL (Center element, 5 cols screen width) */}
-        <section id="print-visualization-column" className="lg:col-span-5 flex flex-col bg-neutral-900 border border-neutral-800/80 rounded-xl p-4 md:p-5 justify-between shadow-lg overflow-hidden relative lg:h-[780px]">
+        <section id="print-visualization-column" className="col-span-1 xl:col-span-5 flex flex-col bg-neutral-900 border border-neutral-800/80 rounded-xl p-4 md:p-5 justify-between shadow-lg overflow-hidden relative xl:h-[780px]">
           
           <div className="flex items-center justify-between border-b border-neutral-850 pb-3 mb-4">
             <div>
@@ -1166,7 +1182,7 @@ export default function App() {
         </section>
 
         {/* COLUMN 3: ORDER HISTORY LISTING GROUPED BY DAY AND HOUR (Right column, 3 cols wide on screen) */}
-        <section id="history-scroller-column" className="lg:col-span-3 flex flex-col bg-neutral-900 border border-neutral-800/80 rounded-xl overflow-hidden shadow-lg lg:h-[780px]">
+        <section id="history-scroller-column" className="col-span-1 xl:col-span-3 flex flex-col bg-neutral-900 border border-neutral-800/80 rounded-xl overflow-hidden shadow-lg xl:h-[780px]">
           
           <div className="p-3 bg-neutral-900/50 border-b border-neutral-800 space-y-1">
             <h2 className="text-sm font-bold uppercase tracking-widest text-neutral-350 flex items-center gap-1.5">
@@ -1176,7 +1192,7 @@ export default function App() {
             <p className="text-[10px] text-neutral-500">Agrupado por dia e Horário de recepção.</p>
           </div>
 
-          <div id="history-days-scroller" className="flex-1 overflow-y-auto p-2 bg-neutral-950/30 divide-y divide-neutral-850/40 h-80 lg:h-auto">
+          <div id="history-days-scroller" className="flex-1 overflow-y-auto p-2 bg-neutral-950/30 divide-y divide-neutral-850/40 h-80 xl:h-auto">
             {groupedOrdersByDate.length === 0 ? (
               <div className="p-8 text-center text-xs text-neutral-600">
                 Sem histórico de comandas.
