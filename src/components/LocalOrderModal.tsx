@@ -885,13 +885,13 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
                         }
 
                         if (activeCat === 'cheese') {
-                          return add.categoria_id === 8 || add.categoria_id === 3;
+                          return add.categoria_id === 8 || add.categoria_id === 3 || add.categoria_id === 7;
                         }
 
                         if (activeCat === 'suggerito') {
                           // Auto detect product suggestions
                           if (lowerName.includes('pastel')) {
-                            return add.categoria_id === 8 || add.categoria_id === 3 || lowAdd.includes('pastel:') || ['prestígio', 'bolo', 'pudim', 'paçoquinha', 'geleia', 'moça', 'gibi'].some(x => lowAdd.includes(x));
+                            return add.categoria_id === 7 || add.categoria_id === 8 || add.categoria_id === 3 || lowAdd.includes('pastel:') || ['prestigio', 'prestígio', 'bolo', 'pudim', 'paçoquinha', 'geleia', 'moça', 'gibi'].some(x => lowAdd.includes(x));
                           }
                           if (isMarmitaOrMinuta) {
                             // Only allow Category_id 2 & 3 for Marmita/La Minuta extra additionals!
@@ -901,14 +901,16 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
                           return add.categoria_id === 3 || (!lowAdd.includes('pastel:') && !lowAdd.includes('marmitex/') && !lowAdd.includes('adicional '));
                         }
                         if (activeCat === 'pastel') {
-                          return add.categoria_id === 8 || add.categoria_id === 3 || lowAdd.includes('pastel:');
+                          return add.categoria_id === 7 || add.categoria_id === 8 || add.categoria_id === 3 || lowAdd.includes('pastel:');
                         }
                         if (activeCat === 'pratos') {
                           // Only include categories 2 and 3 for Marmitex / La Minuta extra additions!
                           return add.categoria_id === 2 || add.categoria_id === 3;
                         }
                         if (activeCat === 'doces') {
-                          return add.categoria_id === 4 || (!lowAdd.includes('pastel:') && !lowAdd.includes('marmitex/') && !lowAdd.includes('adicional ') && ['caseiro', 'paçoquinha', 'geleia', 'moça', 'gibi', 'bolo', 'dois amores', 'pudim'].some(x => lowAdd.includes(x)));
+                          const isSweetById = add.categoria_id === 5 || add.categoria_id === 6 || (add.categoria_id === 4 && lowAdd !== 'talheres descartáveis');
+                          const isSweetByName = ['caseiro', 'paçoquinha', 'geleia', 'moça', 'gibi', 'bolo', 'dois amores', 'pudim', 'trento', 'prestigio', 'bis', 'lacta', 'diamante', 'halls', 'trident', 'chocolate', 'sonho de valsa', 'ouro branco'].some(x => lowAdd.includes(x));
+                          return (isSweetById || isSweetByName) && !lowAdd.includes('pastel:') && !lowAdd.includes('marmitex/') && !lowAdd.includes('adicional ');
                         }
                         return true; // todos
                       });
