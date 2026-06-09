@@ -1,0 +1,16 @@
+{
+  "name": "armazem-reche-print-agent",
+  "version": "1.0.0",
+  "description": "Agente de impressão térmica ESC/POS local para o painel de comandas Armazém Reche",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "node-thermal-printer": "^4.3.0"
+  },
+  "author": "Armazém Reche",
+  "license": "ISC"
+}

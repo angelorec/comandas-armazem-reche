@@ -4,7 +4,7 @@ import {
   Sparkles, CheckCircle2, XCircle, PlusCircle, RotateCcw, FileJson, 
   Calendar, MapPin, Phone, CreditCard, AlertCircle, Filter, 
   Volume2, VolumeX, ChevronDown, ChevronUp, SlidersHorizontal, Trash2, 
-  ExternalLink, Layers, RefreshCw, Edit
+  ExternalLink, Layers, RefreshCw, Edit, Settings
 } from 'lucide-react';
 import { NormalizedOrder, OrderPlatform } from './types';
 import DashboardStats from './components/DashboardStats';
@@ -27,6 +27,39 @@ const isProteinAdditional = (name: string): boolean => {
   if (!name) return false;
   const lower = name.toLowerCase();
   return lower.includes('(marmitex/la minuta)') || lower.includes('(marmitex/lá minuta)');
+};
+
+const formatPastelKitchenName = (name: string): string => {
+  if (!name) return '';
+  const nameLower = name.toLowerCase();
+
+  // Guard format
+  if (nameLower.includes('cm')) {
+    return name;
+  }
+
+  const isPastel = nameLower.includes('pastel') || nameLower.includes('pasteis') || nameLower.includes('pastéis');
+  if (!isPastel) {
+    return name;
+  }
+
+  const regexP = /\b(p)\b/i;
+  const regexM = /\b(m)\b/i;
+  const regexG = /\b(g)\b/i;
+  const regexS = /\b(s)\b/i;
+
+  let formatted = name;
+  if (regexP.test(formatted)) {
+    formatted = formatted.replace(regexP, '$1 (14cm)');
+  } else if (regexM.test(formatted)) {
+    formatted = formatted.replace(regexM, '$1 (18cm)');
+  } else if (regexG.test(formatted)) {
+    formatted = formatted.replace(regexG, '$1 (25cm)');
+  } else if (regexS.test(formatted)) {
+    formatted = formatted.replace(regexS, '$1 (30cm)');
+  }
+
+  return formatted;
 };
 
 export default function App() {
@@ -62,6 +95,34 @@ export default function App() {
   const [printSoundEnabled, setPrintSoundEnabled] = useState(true);
   const [showRawPayload, setShowRawPayload] = useState(false);
 
+  // Direct physical local ESC/POS printing configs
+  const [directPhysicalPrint, setDirectPhysicalPrint] = useState(() => {
+    return localStorage.getItem('directPhysicalPrint') === 'true';
+  });
+  const [printAgentUrl, setPrintAgentUrl] = useState(() => {
+    return localStorage.getItem('printAgentUrl') || 'http://localhost:3001';
+  });
+  const [autoPrintNewOrders, setAutoPrintNewOrders] = useState(() => {
+    return localStorage.getItem('autoPrintNewOrders') === 'true';
+  });
+  const [showPrintConfigModal, setShowPrintConfigModal] = useState(false);
+
+  // Persist print configs
+  useEffect(() => {
+    localStorage.setItem('directPhysicalPrint', String(directPhysicalPrint));
+  }, [directPhysicalPrint]);
+
+  useEffect(() => {
+    localStorage.setItem('printAgentUrl', printAgentUrl);
+  }, [printAgentUrl]);
+
+  useEffect(() => {
+    localStorage.setItem('autoPrintNewOrders', String(autoPrintNewOrders));
+  }, [autoPrintNewOrders]);
+
+  // Keep track of previously loaded orders to perform Auto-Print on newly polled ones
+  const loadedOrdersRef = useRef<string[]>([]);
+
   // Auto-reload timer ref
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -78,6 +139,23 @@ export default function App() {
         
         const data: NormalizedOrder[] = await res.json();
         setOrders(data);
+
+        // Auto-print newly arrived pending orders if autoPrintNewOrders & directPhysicalPrint are enabled
+        if (loadedOrdersRef.current.length > 0 && autoPrintNewOrders && directPhysicalPrint) {
+          const newPendingOrders = data.filter(order => 
+            order.status === 'pending' && 
+            !loadedOrdersRef.current.includes(order.id)
+          );
+          if (newPendingOrders.length > 0) {
+            newPendingOrders.forEach(order => {
+              console.log('Detectado novo pedido pendente para auto-impressão física:', order.id);
+              sendToLocalPrintAgent(order, 'both');
+            });
+          }
+        }
+        
+        // Update loaded orders tracker
+        loadedOrdersRef.current = data.map(o => o.id);
         
         // Auto-select first order if none selected or the selected one isn't in list anymore
         if (data.length > 0) {
@@ -174,11 +252,78 @@ export default function App() {
     }
   };
 
+  // Helper to trigger direct physical printing on the local ESC/POS print agent
+  const sendToLocalPrintAgent = async (order: NormalizedOrder, type: 'normal' | 'kitchen' | 'both') => {
+    try {
+      // Create a clean, highly compatible item array for the local ESC/POS print agent
+      const cleanItems = order.items.map(i => ({
+        qtd: i.quantity,
+        nome: i.name,
+        preco: i.price,
+        obs: i.observations || '',
+        adicionais: i.additionals?.map(a => `${a.quantity}x ${a.name}`) || []
+      }));
+
+      const payload = {
+        id: order.id,
+        numero: order.displayId.replace('#', ''),
+        origem: order.platform.toUpperCase(),
+        tipoEntrega: order.deliveryType,
+        cliente: order.customerName,
+        telefone: order.customerPhone || '',
+        endereco: order.customerAddress ? {
+          rua: order.customerAddress.street || '',
+          numero: order.customerAddress.number || '',
+          bairro: order.customerAddress.neighborhood || '',
+          cidade: order.customerAddress.city || '',
+          complemento: order.customerAddress.complement || '',
+          referencia: order.customerAddress.formatted || ''
+        } : null,
+        itens: cleanItems,
+        pagamento: order.paymentMethod,
+        total: order.total,
+        taxaEntrega: order.deliveryFee,
+        desconto: order.discount || 0,
+        subtotal: order.subtotal,
+        trocoPara: order.changeFor || null,
+        tipoViacomanda: type, // 'normal' | 'kitchen' | 'both'
+        data: new Date(order.createdAt).toLocaleDateString('pt-BR'),
+        hora: order.orderTime
+      };
+
+      const cleanAgentUrl = printAgentUrl.trim().replace(/\/$/, '');
+      const response = await fetch(`${cleanAgentUrl}/imprimir`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
+        body: JSON.stringify({ pedido: payload })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        console.error('Local print agent error:', errData);
+      } else {
+        console.log('Fired direct local physical print with success!');
+      }
+    } catch (err: any) {
+      console.warn('Physical local printer connection error:', err);
+      // We log nicely, and also we can warn in console
+    }
+  };
+
   // Manual Trigger Print API action & Sound demo
   const handlePrint = async (id: string, type: 'normal' | 'kitchen' | 'both') => {
     setPrintSimulationType(type);
     setPrintSimulationRunning(true);
     playPrinterSound();
+
+    // Trigger physical printing directly to local agent if enabled
+    const targetOrder = orders.find(o => o.id === id);
+    if (directPhysicalPrint && targetOrder) {
+      sendToLocalPrintAgent(targetOrder, type);
+    }
 
     try {
       const res = await fetch(`/api/orders/${id}/print`, {
@@ -541,6 +686,16 @@ export default function App() {
             title={printSoundEnabled ? 'Silenciar som da impressora' : 'Ativar som da impressora'}
           >
             {printSoundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+          </button>
+
+          {/* Physical local print settings */}
+          <button 
+            id="btn-open-print-config"
+            onClick={() => setShowPrintConfigModal(true)}
+            className={`p-2 rounded-lg cursor-pointer transition border ${directPhysicalPrint ? 'text-yellow-400 border-yellow-400/35 bg-yellow-400/5 hover:text-yellow-300' : 'text-neutral-400 hover:text-neutral-300 border-neutral-800 bg-neutral-950/40 hover:bg-neutral-800'}`}
+            title={directPhysicalPrint ? 'Impressão Física Local: ATIVADA' : 'Configurar Impressora Física Local'}
+          >
+            <Settings className={`w-4 h-4 ${directPhysicalPrint ? 'animate-pulse' : ''}`} />
           </button>
 
           <span className="bg-neutral-950 text-yellow-400 font-mono font-bold text-xs px-3 py-1.5 rounded-lg border border-neutral-800">
@@ -1045,6 +1200,7 @@ export default function App() {
                         const protein = item.additionals?.find(add => isProteinAdditional(add.name));
                         const otherAdditionals = item.additionals?.filter(add => !isProteinAdditional(add.name)) || [];
                         const displayName = protein ? `${item.name} (${formatAddName(protein.name)})` : item.name;
+                        const finalDisplayName = formatPastelKitchenName(displayName);
 
                         return (
                           <div key={idx} className="border-b border-neutral-350 pb-2 last:border-b-0 space-y-1">
@@ -1053,7 +1209,7 @@ export default function App() {
                                 <span className="bg-neutral-900 text-white text-[11px] px-1.5 py-0.2 rounded-sm font-mono mr-1">
                                   {item.quantity}x
                                 </span>
-                                {displayName}
+                                {finalDisplayName}
                               </span>
                             </div>
 
@@ -1313,6 +1469,172 @@ export default function App() {
         onClose={() => setIsHistoryOpen(false)}
         onSelectOrderForReprint={handleSelectOrderFromHistory}
       />
+
+      {/* COMPACT & POLISHED PRINT CONFIGURATION MODAL */}
+      {showPrintConfigModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            
+            {/* Header */}
+            <div className="p-4 border-b border-neutral-850 bg-neutral-900/50 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Settings className="w-5 h-5 text-yellow-400" />
+                <h3 className="text-sm font-bold uppercase tracking-wider text-neutral-100">Configuração de Impressora Física</h3>
+              </div>
+              <button 
+                onClick={() => setShowPrintConfigModal(false)}
+                className="text-neutral-500 hover:text-neutral-300 text-xs px-2.5 py-1 bg-neutral-850 hover:bg-neutral-800 rounded-lg transition"
+              >
+                Fechar
+              </button>
+            </div>
+
+            {/* Content Scroller */}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs text-neutral-300">
+              
+              <div className="bg-yellow-400/5 border border-yellow-400/10 p-3.5 rounded-xl space-y-2">
+                <span className="font-extrabold text-yellow-400 block uppercase tracking-wide text-[10px]">💡 COMO FUNCIONA A IMPRESSÃO?</span>
+                <p className="leading-relaxed text-neutral-400 text-[11px]">
+                  Como este aplicativo roda em um navegador seguro (HTTPS), ele não pode se comunicar diretamente com seu hardware local. O <strong>Agente Local de Impressão</strong> atua como uma ponte rodando em seu computador para receber comandas e enviá-las para sua impressora.
+                </p>
+              </div>
+
+              {/* Toggle Switch */}
+              <div className="bg-neutral-950/45 p-4 rounded-xl border border-neutral-850 flex items-center justify-between gap-4">
+                <div className="space-y-1 pr-2">
+                  <span className="font-bold text-neutral-200 block">Ativar Impressão Física Direta</span>
+                  <p className="text-[10px] text-neutral-500">Quando ativado, os cliques de impressão enviarão os dados do pedido ao agente local.</p>
+                </div>
+                <button
+                  onClick={() => setDirectPhysicalPrint(!directPhysicalPrint)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${directPhysicalPrint ? 'bg-yellow-400 font-extrabold' : 'bg-neutral-800'}`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-neutral-950 shadow ring-0 transition duration-200 ease-in-out ${directPhysicalPrint ? 'translate-x-5' : 'translate-x-0'}`}
+                  />
+                </button>
+              </div>
+
+              {/* Agent URL input config */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-bold text-neutral-400 block">URL do Agente de Impressão (Local / ngrok)</label>
+                <input 
+                  type="text" 
+                  value={printAgentUrl}
+                  onChange={(e) => setPrintAgentUrl(e.target.value)}
+                  placeholder="Ex: http://localhost:3001 ou https://abc.ngrok-free.app"
+                  className="w-full bg-neutral-950 border border-neutral-800 hover:border-neutral-750 focus:border-yellow-400 px-3 py-2.5 rounded-xl font-mono text-xs text-neutral-200 focus:outline-none transition"
+                />
+                <p className="text-[10px] text-neutral-500 leading-normal">
+                  Insira <strong>http://localhost:3001</strong> para testar localmente, ou a URL HTTPS provida pelo <strong>ngrok</strong> se estiver rodando o teste no celular de outro dispositivo.
+                </p>
+              </div>
+
+              {/* Auto print toggle switch */}
+              {directPhysicalPrint && (
+                <div className="bg-neutral-950/45 p-4 rounded-xl border border-neutral-850 flex items-center justify-between gap-4 animate-fade-in">
+                  <div className="space-y-1 pr-2">
+                    <span className="font-bold text-neutral-200 block">Auto-Imprimir Novas Comandas</span>
+                    <p className="text-[10px] text-neutral-500">Impressão automática e instantânea na cozinha no segundo que o pedido for recebido via API ou no painel.</p>
+                  </div>
+                  <button
+                    onClick={() => setAutoPrintNewOrders(!autoPrintNewOrders)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${autoPrintNewOrders ? 'bg-yellow-400 font-extrabold' : 'bg-neutral-800'}`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-neutral-950 shadow ring-0 transition duration-200 ease-in-out ${autoPrintNewOrders ? 'translate-x-5' : 'translate-x-0'}`}
+                    />
+                  </button>
+                </div>
+              )}
+
+              {/* Action and test actions block */}
+              <div className="pt-2 border-t border-neutral-850 flex gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!printAgentUrl) return alert('Insira a URL do agente antes de testar!');
+                    try {
+                      const samplePayload = {
+                        pedido: {
+                          numero: 'TESTE-001',
+                          origem: 'LOCAL (PAINEL)',
+                          itens: [
+                            { qtd: 1, nome: 'CONEXÃO IMPRESSORA FÍSICA OK', obs: 'Teste de impressão com sucesso!', adicionais: [] }
+                          ],
+                          total: 0,
+                          taxaEntrega: 0,
+                          desconto: 0,
+                          subtotal: 0,
+                          pagamento: 'TESTE',
+                          cliente: 'Cliente Teste Armazém Reche',
+                          data: new Date().toLocaleDateString('pt-BR'),
+                          hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                        }
+                      };
+                      
+                      const response = await fetch(`${printAgentUrl.trim().replace(/\/$/, '')}/imprimir`, {
+                        method: 'POST',
+                        headers: { 
+                          'Content-Type': 'application/json',
+                          'ngrok-skip-browser-warning': 'true'
+                        },
+                        body: JSON.stringify(samplePayload)
+                      });
+                      
+                      if (response.ok) {
+                        alert('Sucesso! Comando de teste enviado e aceito pelo seu agente local! Verifique a impressora.');
+                      } else {
+                        const err = await response.json().catch(() => ({}));
+                        alert(`Agente local respondeu com erro: ${err.erro || 'Erro não especificado'}`);
+                      }
+                    } catch (e: any) {
+                      alert(`Falha ao conectar no agente de impressão: ${e.message}\nCertifique-se de que o script 'node_print_agent.js' está executando localmente na mesma máquina e de que a URL está correta.`);
+                    }
+                  }}
+                  className="flex-1 py-2.5 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 font-bold rounded-xl flex items-center justify-center gap-1.5 border border-neutral-750 transition"
+                >
+                  <Printer className="w-3.5 h-3.5 text-neutral-400" />
+                  Testar Agente Local
+                </button>
+              </div>
+
+              {/* Blueprint Agent code download references */}
+              <div className="pt-2 border-t border-neutral-850 space-y-2">
+                <span className="font-extrabold text-neutral-400 block uppercase tracking-wide text-[10px]">💾 SCRIPT COMPACTO PRONTO PARA O SEU NOTEBOOK</span>
+                <p className="text-[10px] text-neutral-500 leading-normal">
+                  Nós pré-configuramos e salvamos o arquivo <strong>print-agent/index.js</strong> no diretório do seu app! Você pode copiá-lo para rodar no notebook das seguintes formas:
+                </p>
+                <div className="bg-neutral-950 p-2.5 rounded-lg border border-neutral-850 font-mono text-[9px] text-neutral-400 select-all overflow-x-auto whitespace-pre leading-normal">
+{`# 1. Crie a pasta do agente no notebook com os arquivos prontos:
+mkdir agente-armazem && cd agente-armazem
+npm init -y
+npm i express cors node-thermal-printer
+
+# 2. Configure e conecte o seu ngrok no notebook com o seu token:
+ngrok config add-authtoken 3EhQM4ctG3bispS1mIhkiOeM3no_4fytcq4X31JBoTDP7VnP2
+ngrok http 3001
+
+# 3. Cole a URL gerada pelo ngrok acima no campo "URL do Agente" desta janela!`}
+                </div>
+              </div>
+
+            </div>
+
+            {/* Footer buttons close */}
+            <div className="p-3 border-t border-neutral-850 bg-neutral-950 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowPrintConfigModal(false)}
+                className="px-4 py-2 bg-yellow-400 hover:bg-yellow-500 text-neutral-950 font-extrabold rounded-xl transition cursor-pointer text-xs"
+              >
+                Salvar Configurações
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }
