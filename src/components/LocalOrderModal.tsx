@@ -122,7 +122,14 @@ export default function LocalOrderModal({ isOpen, onClose, onSave, orderToEdit }
             { id: 2017, nome: 'Talheres Descartáveis', preco: 0.00, categoria_id: 3 },
             { id: 2025, nome: 'Pastel: Queijo', preco: 6.00, categoria_id: 3 },
             { id: 2030, nome: 'Pastel: Cheddar', preco: 7.00, categoria_id: 8 },
-            { id: 2034, nome: 'Pastel: Bacon', preco: 7.00, categoria_id: 8 }
+            { id: 2034, nome: 'Pastel: Bacon', preco: 7.00, categoria_id: 8 },
+            { id: 2035, nome: 'Catupiry Original', preco: 8.00, categoria_id: 7 },
+            { id: 2040, nome: 'Trento Chocolate', preco: 3.50, categoria_id: 4 },
+            { id: 2041, nome: 'Doce de Leite Caseiro', preco: 4.00, categoria_id: 4 },
+            { id: 2042, nome: 'Bolo de Pote Ninho com Nutella', preco: 10.00, categoria_id: 5 },
+            { id: 2043, nome: 'Pudim de Leite Condensado', preco: 7.00, categoria_id: 6 },
+            { id: 2044, nome: 'Bombom Sonho de Valsa', preco: 2.50, categoria_id: 4 },
+            { id: 2045, nome: 'Tablete KitKat Mini', preco: 4.50, categoria_id: 4 }
           ]);
         })
         .finally(() => {

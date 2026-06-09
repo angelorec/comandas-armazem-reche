@@ -1,7 +1,6 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { createServer as createViteServer } from 'vite';
 import { normalizeOrder } from './src/utils/normalizer';
 import { NormalizedOrder, OrderPlatform } from './src/types';
 import dotenv from 'dotenv';
@@ -878,6 +877,7 @@ async function startServer() {
   }
 
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
