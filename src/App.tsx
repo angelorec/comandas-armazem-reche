@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import qz from 'qz-tray';
 import { 
   Printer, ChefHat, ShoppingBag, TrendingUp, Clock, ArrowRight, Search, 
   Sparkles, CheckCircle2, XCircle, PlusCircle, RotateCcw, FileJson, 
@@ -107,6 +108,43 @@ export default function App() {
   });
   const [showPrintConfigModal, setShowPrintConfigModal] = useState(false);
 
+  // QZ TRAY CONFIGS
+  const [printMethod, setPrintMethod] = useState<'agent' | 'qz'>(() => {
+    return (localStorage.getItem('printMethod') as 'agent' | 'qz') || 'agent';
+  });
+  const [qzPrinterName, setQzPrinterName] = useState(() => {
+    return localStorage.getItem('qzPrinterName') || '';
+  });
+  const [isQzConnected, setIsQzConnected] = useState(false);
+
+  const connectQz = async () => {
+    try {
+      if (qz.websocket.isActive()) {
+        setIsQzConnected(true);
+        return;
+      }
+      await qz.websocket.connect();
+      setIsQzConnected(true);
+    } catch (err) {
+      console.error("QZ Tray connection failed:", err);
+      setIsQzConnected(false);
+      throw err;
+    }
+  };
+
+  useEffect(() => {
+    if (directPhysicalPrint && printMethod === 'qz') {
+      connectQz().catch(() => {});
+    } else {
+      try {
+        if (qz.websocket.isActive()) {
+          qz.websocket.disconnect().catch(() => {});
+          setIsQzConnected(false);
+        }
+      } catch (e) {}
+    }
+  }, [directPhysicalPrint, printMethod]);
+
   // Persist print configs
   useEffect(() => {
     localStorage.setItem('directPhysicalPrint', String(directPhysicalPrint));
@@ -119,6 +157,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('autoPrintNewOrders', String(autoPrintNewOrders));
   }, [autoPrintNewOrders]);
+
+  useEffect(() => {
+    localStorage.setItem('printMethod', printMethod);
+  }, [printMethod]);
+
+  useEffect(() => {
+    localStorage.setItem('qzPrinterName', qzPrinterName);
+  }, [qzPrinterName]);
 
   // Keep track of previously loaded orders to perform Auto-Print on newly polled ones
   const loadedOrdersRef = useRef<string[]>([]);
@@ -149,7 +195,7 @@ export default function App() {
           if (newPendingOrders.length > 0) {
             newPendingOrders.forEach(order => {
               console.log('Detectado novo pedido pendente para auto-impressão física:', order.id);
-              sendToLocalPrintAgent(order, 'both');
+              triggerPhysicalPrint(order, 'both');
             });
           }
         }
@@ -296,7 +342,9 @@ export default function App() {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true'
+          'ngrok-skip-browser-warning': 'true',
+          'bypass-tunnel-reminder': 'true',
+          'Bypass-Tunnel-Reminder': 'true'
         },
         body: JSON.stringify({ pedido: payload })
       });
@@ -309,7 +357,207 @@ export default function App() {
       }
     } catch (err: any) {
       console.warn('Physical local printer connection error:', err);
-      // We log nicely, and also we can warn in console
+    }
+  };
+
+  // Helper to trigger direct physical printing via QZ Tray WebSocket
+  const sendToQzPrinter = async (order: NormalizedOrder, type: 'normal' | 'kitchen' | 'both') => {
+    try {
+      const cleanItems = order.items.map(i => ({
+        qtd: i.quantity,
+        nome: i.name,
+        preco: i.price,
+        obs: i.observations || '',
+        adicionais: i.additionals?.map(a => `${a.quantity}x ${a.name}`) || []
+      }));
+
+      const pedido = {
+        id: order.id,
+        numero: order.displayId.replace('#', ''),
+        origem: order.platform.toUpperCase(),
+        tipoEntrega: order.deliveryType,
+        cliente: order.customerName,
+        telefone: order.customerPhone || '',
+        endereco: order.customerAddress ? {
+          rua: order.customerAddress.street || '',
+          numero: order.customerAddress.number || '',
+          bairro: order.customerAddress.neighborhood || '',
+          cidade: order.customerAddress.city || '',
+          complemento: order.customerAddress.complement || '',
+          referencia: order.customerAddress.formatted || ''
+        } : null,
+        itens: cleanItems,
+        pagamento: order.paymentMethod,
+        total: order.total,
+        taxaEntrega: order.deliveryFee,
+        desconto: order.discount || 0,
+        subtotal: order.subtotal,
+        trocoPara: order.changeFor || null,
+        data: new Date(order.createdAt).toLocaleDateString('pt-BR'),
+        hora: order.orderTime
+      };
+
+      if (!qz.websocket.isActive()) {
+        await connectQz();
+      }
+
+      let targetPrinter = qzPrinterName.trim();
+      if (!targetPrinter) {
+        targetPrinter = await qz.printers.getDefault();
+      }
+
+      const config = qz.configs.create(targetPrinter);
+
+      const generateViaData = (viaType: 'normal' | 'kitchen') => {
+        const data: any[] = [];
+        const addLine = (text = '') => {
+          data.push(text + '\n');
+        };
+
+        const escCenter = '\x1b\x61\x01';
+        const escLeft = '\x1b\x61\x00';
+        const escBoldOn = '\x1b\x45\x01';
+        const escBoldOff = '\x1b\x45\x00';
+        const escDoubleOn = '\x1b\x21\x30'; 
+        const escDoubleOff = '\x1b\x21\x00';
+        const escDrawLine = '==============================\n';
+
+        // Header
+        data.push(escCenter);
+        data.push(escDoubleOn);
+        data.push(escBoldOn);
+        if (viaType === 'kitchen') {
+          data.push('--- COZINHA ---\n');
+        } else {
+          data.push('== EXPEDICAO ==\n');
+        }
+        data.push(escBoldOff);
+        data.push(escDoubleOff);
+
+        addLine(`PEDIDO #${pedido.numero || 'S/N'} (${pedido.origem || 'LOCAL'})`);
+        addLine(`Recepcao: ${pedido.data || ''} ${pedido.hora || ''}`);
+        addLine(`Tipo: ${(pedido.tipoEntrega || 'Nao informado').toUpperCase()}`);
+        data.push(escLeft);
+        data.push(escDrawLine);
+
+        // Cliente
+        addLine(`Cliente: ${pedido.cliente || 'Nao informado'}`);
+        if (pedido.telefone) {
+          addLine(`Fone: ${pedido.telefone}`);
+        }
+
+        // Endereco
+        if (pedido.endereco && viaType !== 'kitchen') {
+          const end = pedido.endereco;
+          addLine(`End: ${end.rua || ''}, ${end.numero || ''}`);
+          addLine(`Bairro: ${end.bairro || ''}`);
+          if (end.complemento) {
+            addLine(`Comp: ${end.complemento}`);
+          }
+          if (end.referencia) {
+            addLine(`Ref: ${end.referencia}`);
+          }
+        }
+        data.push(escDrawLine);
+
+        // Itens
+        addLine('ITENS DO PEDIDO:');
+        pedido.itens.forEach(item => {
+          let nameToPrint = item.nome || 'Item';
+          if (viaType === 'kitchen') {
+            const nameLower = nameToPrint.toLowerCase();
+            const isPastel = nameLower.includes('pastel') || nameLower.includes('pasteis') || nameLower.includes('pastéis');
+            if (isPastel && !nameLower.includes('cm')) {
+              const regexP = /\b(p)\b/i;
+              const regexM = /\b(m)\b/i;
+              const regexG = /\b(g)\b/i;
+              const regexS = /\b(s)\b/i;
+
+              if (regexP.test(nameToPrint)) {
+                nameToPrint = nameToPrint.replace(regexP, '$1 (14cm)');
+              } else if (regexM.test(nameToPrint)) {
+                nameToPrint = nameToPrint.replace(regexM, '$1 (18cm)');
+              } else if (regexG.test(nameToPrint)) {
+                nameToPrint = nameToPrint.replace(regexG, '$1 (25cm)');
+              } else if (regexS.test(nameToPrint)) {
+                nameToPrint = nameToPrint.replace(regexS, '$1 (30cm)');
+              }
+            }
+            data.push(escDoubleOn);
+            data.push(escBoldOn);
+          }
+
+          addLine(`${item.qtd || 1}x ${nameToPrint}`);
+
+          if (viaType === 'kitchen') {
+            data.push(escBoldOff);
+            data.push(escDoubleOff);
+          }
+
+          if (item.obs) {
+            addLine(`   * OBS: ${item.obs}`);
+          }
+          if (item.adicionais && item.adicionais.length > 0) {
+            item.adicionais.forEach(ad => {
+              addLine(`   + ${ad}`);
+            });
+          }
+          addLine();
+        });
+
+        // Fechamento
+        if (viaType !== 'kitchen') {
+          data.push(escDrawLine);
+          const subtotal = typeof pedido.subtotal === 'number' ? pedido.subtotal : 0;
+          const taxaEntrega = typeof pedido.taxaEntrega === 'number' ? pedido.taxaEntrega : 0;
+          const desconto = typeof pedido.desconto === 'number' ? pedido.desconto : 0;
+          const total = typeof pedido.total === 'number' ? pedido.total : 0;
+          const trocoPara = typeof pedido.trocoPara === 'number' ? pedido.trocoPara : 0;
+
+          addLine(`Subtotal: R$ ${subtotal.toFixed(2)}`);
+          addLine(`Taxa de Entrega: R$ ${taxaEntrega.toFixed(2)}`);
+          if (desconto > 0) {
+            addLine(`Desconto: R$ ${desconto.toFixed(2)}`);
+          }
+          data.push(escBoldOn);
+          addLine(`TOTAL DO PEDIDO: R$ ${total.toFixed(2)}`);
+          data.push(escBoldOff);
+          addLine(`Forma de Pagto: ${pedido.pagamento || 'Nao informado'}`);
+          if (trocoPara > 0) {
+            addLine(`Troco para: R$ ${trocoPara.toFixed(2)}`);
+            addLine(`Troco a devolver: R$ ${(trocoPara - total).toFixed(2)}`);
+          }
+        }
+
+        data.push('\n\n\n\n');
+        data.push('\x1d\x56\x00'); // Cut command
+
+        return data;
+      };
+
+      if (type === 'both' || type === 'normal') {
+        const normalData = generateViaData('normal');
+        await qz.print(config, normalData);
+      }
+      if (type === 'both' || type === 'kitchen') {
+        const kitchenData = generateViaData('kitchen');
+        await qz.print(config, kitchenData);
+      }
+
+      console.log('Printed successfully via QZ Tray!');
+    } catch (err: any) {
+      console.error('QZ Tray print error:', err);
+      alert(`Erro na impressão via QZ Tray: ${err.message || err}\nCertifique-se de que o QZ Tray está aberto no seu PC.`);
+    }
+  };
+
+  // Central trigger function
+  const triggerPhysicalPrint = async (order: NormalizedOrder, type: 'normal' | 'kitchen' | 'both') => {
+    if (!directPhysicalPrint) return;
+    if (printMethod === 'qz') {
+      await sendToQzPrinter(order, type);
+    } else {
+      await sendToLocalPrintAgent(order, type);
     }
   };
 
@@ -319,10 +567,10 @@ export default function App() {
     setPrintSimulationRunning(true);
     playPrinterSound();
 
-    // Trigger physical printing directly to local agent if enabled
+    // Trigger physical printing directly to local printer/agent if enabled
     const targetOrder = orders.find(o => o.id === id);
     if (directPhysicalPrint && targetOrder) {
-      sendToLocalPrintAgent(targetOrder, type);
+      triggerPhysicalPrint(targetOrder, type);
     }
 
     try {
@@ -1495,7 +1743,7 @@ export default function App() {
               <div className="bg-yellow-400/5 border border-yellow-400/10 p-3.5 rounded-xl space-y-2">
                 <span className="font-extrabold text-yellow-400 block uppercase tracking-wide text-[10px]">💡 COMO FUNCIONA A IMPRESSÃO?</span>
                 <p className="leading-relaxed text-neutral-400 text-[11px]">
-                  Como este aplicativo roda em um navegador seguro (HTTPS), ele não pode se comunicar diretamente com seu hardware local. O <strong>Agente Local de Impressão</strong> atua como uma ponte rodando em seu computador para receber comandas e enviá-las para sua impressora.
+                  Como este aplicativo roda em um navegador seguro, ele não pode acessar diretamente seu hardware sem um canal de ponte local. Oferecemos duas excelentes formas para conectar seu painel à sua impressora térmica:
                 </p>
               </div>
 
@@ -1503,7 +1751,7 @@ export default function App() {
               <div className="bg-neutral-950/45 p-4 rounded-xl border border-neutral-850 flex items-center justify-between gap-4">
                 <div className="space-y-1 pr-2">
                   <span className="font-bold text-neutral-200 block">Ativar Impressão Física Direta</span>
-                  <p className="text-[10px] text-neutral-500">Quando ativado, os cliques de impressão enviarão os dados do pedido ao agente local.</p>
+                  <p className="text-[10px] text-neutral-500">Quando ativado, os cliques de impressão enviarão os dados do pedido diretamente à impressora local.</p>
                 </div>
                 <button
                   onClick={() => setDirectPhysicalPrint(!directPhysicalPrint)}
@@ -1515,109 +1763,223 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Agent URL input config */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase font-bold text-neutral-400 block">URL do Agente de Impressão (Local / ngrok)</label>
-                <input 
-                  type="text" 
-                  value={printAgentUrl}
-                  onChange={(e) => setPrintAgentUrl(e.target.value)}
-                  placeholder="Ex: http://localhost:3001 ou https://abc.ngrok-free.app"
-                  className="w-full bg-neutral-950 border border-neutral-800 hover:border-neutral-750 focus:border-yellow-400 px-3 py-2.5 rounded-xl font-mono text-xs text-neutral-200 focus:outline-none transition"
-                />
-                <p className="text-[10px] text-neutral-500 leading-normal">
-                  Insira <strong>http://localhost:3001</strong> para testar localmente, ou a URL HTTPS provida pelo <strong>ngrok</strong> se estiver rodando o teste no celular de outro dispositivo.
-                </p>
-              </div>
-
-              {/* Auto print toggle switch */}
               {directPhysicalPrint && (
-                <div className="bg-neutral-950/45 p-4 rounded-xl border border-neutral-850 flex items-center justify-between gap-4 animate-fade-in">
-                  <div className="space-y-1 pr-2">
-                    <span className="font-bold text-neutral-200 block">Auto-Imprimir Novas Comandas</span>
-                    <p className="text-[10px] text-neutral-500">Impressão automática e instantânea na cozinha no segundo que o pedido for recebido via API ou no painel.</p>
+                <>
+                  {/* Print Method Selector Tab */}
+                  <div className="space-y-1.5 animate-fade-in">
+                    <label className="text-[10px] uppercase font-bold text-neutral-400 block">Método de Conexão Local</label>
+                    <div className="grid grid-cols-2 gap-2 bg-neutral-955 p-1 rounded-xl border border-neutral-850">
+                      <button
+                        type="button"
+                        onClick={() => setPrintMethod('qz')}
+                        className={`py-2 px-3 rounded-lg font-bold text-xs transition cursor-pointer text-center ${printMethod === 'qz' ? 'bg-yellow-400 text-neutral-950' : 'text-neutral-400 hover:text-neutral-200'}`}
+                      >
+                        QZ Tray (WebSocket - Recomendado)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPrintMethod('agent')}
+                        className={`py-2 px-3 rounded-lg font-bold text-xs transition cursor-pointer text-center ${printMethod === 'agent' ? 'bg-yellow-400 text-neutral-950' : 'text-neutral-400 hover:text-neutral-200'}`}
+                      >
+                        Agente HTTP (ngrok/localhost)
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => setAutoPrintNewOrders(!autoPrintNewOrders)}
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${autoPrintNewOrders ? 'bg-yellow-400 font-extrabold' : 'bg-neutral-800'}`}
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-neutral-950 shadow ring-0 transition duration-200 ease-in-out ${autoPrintNewOrders ? 'translate-x-5' : 'translate-x-0'}`}
-                    />
-                  </button>
-                </div>
-              )}
 
-              {/* Action and test actions block */}
-              <div className="pt-2 border-t border-neutral-850 flex gap-2">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!printAgentUrl) return alert('Insira a URL do agente antes de testar!');
-                    try {
-                      const samplePayload = {
-                        pedido: {
-                          numero: 'TESTE-001',
-                          origem: 'LOCAL (PAINEL)',
-                          itens: [
-                            { qtd: 1, nome: 'CONEXÃO IMPRESSORA FÍSICA OK', obs: 'Teste de impressão com sucesso!', adicionais: [] }
-                          ],
-                          total: 0,
-                          taxaEntrega: 0,
-                          desconto: 0,
-                          subtotal: 0,
-                          pagamento: 'TESTE',
-                          cliente: 'Cliente Teste Armazém Reche',
-                          data: new Date().toLocaleDateString('pt-BR'),
-                          hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-                        }
-                      };
-                      
-                      const response = await fetch(`${printAgentUrl.trim().replace(/\/$/, '')}/imprimir`, {
-                        method: 'POST',
-                        headers: { 
-                          'Content-Type': 'application/json',
-                          'ngrok-skip-browser-warning': 'true'
-                        },
-                        body: JSON.stringify(samplePayload)
-                      });
-                      
-                      if (response.ok) {
-                        alert('Sucesso! Comando de teste enviado e aceito pelo seu agente local! Verifique a impressora.');
-                      } else {
-                        const err = await response.json().catch(() => ({}));
-                        alert(`Agente local respondeu com erro: ${err.erro || 'Erro não especificado'}`);
-                      }
-                    } catch (e: any) {
-                      alert(`Falha ao conectar no agente de impressão: ${e.message}\nCertifique-se de que o script 'node_print_agent.js' está executando localmente na mesma máquina e de que a URL está correta.`);
-                    }
-                  }}
-                  className="flex-1 py-2.5 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 font-bold rounded-xl flex items-center justify-center gap-1.5 border border-neutral-750 transition"
-                >
-                  <Printer className="w-3.5 h-3.5 text-neutral-400" />
-                  Testar Agente Local
-                </button>
-              </div>
+                  {/* QZ TRAY CONFIGURATION */}
+                  {printMethod === 'qz' && (
+                    <div className="space-y-3.5 border-l-2 border-yellow-400 pl-3.5 py-1.5 bg-neutral-950/20 rounded-r-xl animate-fade-in">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-neutral-250 text-xs">Integração QZ Tray</span>
+                        <div className="flex items-center gap-1.5 bg-neutral-950 px-2 py-0.5 rounded border border-neutral-850">
+                          <span className={`inline-block w-2 h-2 rounded-full ${isQzConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-neutral-400">
+                            {isQzConnected ? 'WebSocket Ativo' : 'Desconectado'}
+                          </span>
+                        </div>
+                      </div>
 
-              {/* Blueprint Agent code download references */}
-              <div className="pt-2 border-t border-neutral-850 space-y-2">
-                <span className="font-extrabold text-neutral-400 block uppercase tracking-wide text-[10px]">💾 SCRIPT COMPACTO PRONTO PARA O SEU NOTEBOOK</span>
-                <p className="text-[10px] text-neutral-500 leading-normal">
-                  Nós pré-configuramos e salvamos o arquivo <strong>print-agent/index.js</strong> no diretório do seu app! Você pode copiá-lo para rodar no notebook das seguintes formas:
-                </p>
-                <div className="bg-neutral-950 p-2.5 rounded-lg border border-neutral-850 font-mono text-[9px] text-neutral-400 select-all overflow-x-auto whitespace-pre leading-normal">
-{`# 1. Crie a pasta do agente no notebook com os arquivos prontos:
+                      <p className="text-[10px] text-neutral-400 leading-relaxed">
+                        O <strong>QZ Tray</strong> é um app desktop homologado que expõe suas impressoras de forma segura localmente no navegador. <strong>Não necessita de túnel ngrok ou localtunnel</strong>, evitando qualquer tela de aviso!
+                      </p>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] uppercase font-bold text-neutral-400 block">Nome da Impressora no Windows/Mac</label>
+                        <input 
+                          type="text" 
+                          value={qzPrinterName}
+                          onChange={(e) => setQzPrinterName(e.target.value)}
+                          placeholder="Ex: EPSON TM-T20X (Deixe em branco para usar a padrão)"
+                          className="w-full bg-neutral-950 border border-neutral-800 hover:border-neutral-750 focus:border-yellow-400 px-3 py-2 rounded-xl font-mono text-xs text-neutral-200 focus:outline-none transition animate-none"
+                        />
+                        <p className="text-[10px] text-neutral-500 leading-normal">
+                          Dica: Insira o nome exato. Se deixar vazio, usará a <strong>impressora padrão do Windows/Mac</strong>.
+                        </p>
+                      </div>
+
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await connectQz();
+                              alert('Excelente! Conexão estabelecida com o QZ Tray com sucesso!');
+                            } catch (e: any) {
+                              alert(`Não foi possível conectar ao QZ Tray: ${e.message || e}\n\nCertifique-se de que o QZ Tray está aberto e rodando normalmente no computador da impressora.`);
+                            }
+                          }}
+                          className="flex-1 py-2 bg-neutral-850 hover:bg-neutral-800 text-neutral-250 font-bold rounded-xl border border-neutral-800 text-[10px] transition cursor-pointer text-center"
+                        >
+                          Conectar WebSocket
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const testPayload = {
+                                id: 'teste-qz',
+                                displayId: '#QZ-999',
+                                platform: 'local',
+                                deliveryType: 'retirada',
+                                customerName: 'Imp. Teste QZ Tray',
+                                customerPhone: '(11) 99999-9999',
+                                items: [
+                                  { quantity: 1, name: 'CONEXÃO QZ TRAY IMPRESSORA ATIVA!', price: 0, observations: 'Parabéns, impressão direta via WebSocket com sucesso!' }
+                                ],
+                                paymentMethod: 'DINHEIRO',
+                                total: 0,
+                                deliveryFee: 0,
+                                discount: 0,
+                                subtotal: 0,
+                                orderTime: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                                createdAt: new Date().toISOString()
+                              } as any;
+                              await sendToQzPrinter(testPayload, 'both');
+                              alert('Comando de teste executado via QZ Tray! Verifique a impressora.');
+                            } catch (e: any) {
+                              alert(`Erro no teste QZ Tray: ${e.message || e}`);
+                            }
+                          }}
+                          className="flex-1 py-2 bg-yellow-400/95 hover:bg-yellow-400 text-neutral-950 font-extrabold rounded-xl text-[10px] transition cursor-pointer text-center"
+                        >
+                          Imprimir Teste QZ
+                        </button>
+                      </div>
+
+                      <div className="bg-neutral-950/80 p-3 rounded-lg border border-neutral-850 space-y-1 text-[10px] leading-relaxed select-all">
+                        <span className="font-extrabold text-yellow-500 block uppercase text-[9px] tracking-wide">📦 INSTALAÇÃO INDISPENSÁVEL (QZ TRAY)</span>
+                        <p className="text-neutral-400 text-[9px]">
+                          1. Baixe o instalador no PC da impressora: <a href="https://qz.io/download/" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">https://qz.io/download/</a><br />
+                          2. Conclua a instalação padrão e deixe o QZ Tray carregando em segundo plano.<br />
+                          3. Clique em **Conectar WebSocket** acima. Caso apareça uma janela de permissão no PC, selecione "Remember this decision" e clique em **Allow**. Pronto!
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* HTTP AGENT CONFIGURATION */}
+                  {printMethod === 'agent' && (
+                    <div className="space-y-3.5 border-l-2 border-neutral-750 pl-3.5 py-1.5 bg-neutral-950/20 rounded-r-xl animate-fade-in">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] uppercase font-bold text-neutral-400 block">URL do Agente de Impressão (Local ou ngrok)</label>
+                        <input 
+                          type="text" 
+                          value={printAgentUrl}
+                          onChange={(e) => setPrintAgentUrl(e.target.value)}
+                          placeholder="Ex: http://localhost:3001 ou https://abc.ngrok-free.app"
+                          className="w-full bg-neutral-950 border border-neutral-800 hover:border-neutral-750 focus:border-yellow-400 px-3 py-2 rounded-xl font-mono text-xs text-neutral-200 focus:outline-none transition animate-none"
+                        />
+                        <p className="text-[10px] text-neutral-500 leading-normal">
+                          Insira <strong>http://localhost:3001</strong> para testar na mesma máquina, ou a URL HTTPS provida pelo <strong>ngrok / localtunnel</strong>.
+                        </p>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!printAgentUrl) return alert('Insira a URL do agente antes de testar!');
+                            try {
+                              const samplePayload = {
+                                pedido: {
+                                  numero: 'TESTE-HTTP',
+                                  origem: 'PAINEL',
+                                  tipoEntrega: 'Retirada',
+                                  itens: [
+                                    { qtd: 1, nome: 'CONEXÃO IMPRESSORA VIA AGENTE OK', obs: 'Teste de impressão com sucesso!', adicionais: [] }
+                                  ],
+                                  total: 0,
+                                  taxaEntrega: 0,
+                                  desconto: 0,
+                                  subtotal: 0,
+                                  pagamento: 'TESTE',
+                                  cliente: 'Cliente Teste Armazém Reche',
+                                  data: new Date().toLocaleDateString('pt-BR'),
+                                  hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                                }
+                              };
+                              
+                              const response = await fetch(`${printAgentUrl.trim().replace(/\/$/, '')}/imprimir`, {
+                                method: 'POST',
+                                headers: { 
+                                  'Content-Type': 'application/json',
+                                  'ngrok-skip-browser-warning': 'true',
+                                  'bypass-tunnel-reminder': 'true',
+                                  'Bypass-Tunnel-Reminder': 'true'
+                                },
+                                body: JSON.stringify(samplePayload)
+                              });
+                              
+                              if (response.ok) {
+                                alert('Sucesso! Comando enviado e aceito pelo agente local HTTP. Verifique a impressora!');
+                              } else {
+                                const err = await response.json().catch(() => ({}));
+                                alert(`Agente respondeu com erro: ${err.erro || 'Desconhecido'}`);
+                              }
+                            } catch (e: any) {
+                              alert(`Falha ao conectar no agente: ${e.message}\nVerifique se o script 'node_print_agent.js' ou localtunnel está ativo e executando.`);
+                            }
+                          }}
+                          className="flex-1 py-2 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 font-bold rounded-xl flex items-center justify-center gap-1.5 border border-neutral-750 text-[10px] cursor-pointer transition text-center"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-neutral-400" />
+                          Testar Agente Local HTTP
+                        </button>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <span className="font-extrabold text-neutral-400 block uppercase tracking-wide text-[9px]">💾 SCRIPT DO AGENTE LOCAL HTTP</span>
+                        <div className="bg-neutral-950 p-2.5 rounded-lg border border-neutral-850 font-mono text-[9px] text-neutral-400 select-all overflow-x-auto whitespace-pre leading-normal max-h-24">
+{`# 1. Prepare as dependências:
 mkdir agente-armazem && cd agente-armazem
 npm init -y
 npm i express cors node-thermal-printer
 
-# 2. Configure e conecte o seu ngrok no notebook com o seu token:
-ngrok config add-authtoken 3EhQM4ctG3bispS1mIhkiOeM3no_4fytcq4X31JBoTDP7VnP2
-ngrok http 3001
+# 2. Inicie ou conecte o ngrok:
+ngrok http 3001`}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
-# 3. Cole a URL gerada pelo ngrok acima no campo "URL do Agente" desta janela!`}
-                </div>
-              </div>
+                  {/* Auto print toggle switch */}
+                  <div className="bg-neutral-950/45 p-4 rounded-xl border border-neutral-850 flex items-center justify-between gap-4 animate-fade-in">
+                    <div className="space-y-1 pr-2">
+                      <span className="font-bold text-neutral-200 block">Auto-Imprimir Novas Comandas</span>
+                      <p className="text-[10px] text-neutral-500">Impressão automática e instantânea na cozinha no segundo que o pedido for recebido via API ou no painel.</p>
+                    </div>
+                    <button
+                      onClick={() => setAutoPrintNewOrders(!autoPrintNewOrders)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${autoPrintNewOrders ? 'bg-yellow-400 font-extrabold' : 'bg-neutral-800'}`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-neutral-950 shadow ring-0 transition duration-200 ease-in-out ${autoPrintNewOrders ? 'translate-x-5' : 'translate-x-0'}`}
+                      />
+                    </button>
+                  </div>
+                </>
+              )}
 
             </div>
 
